@@ -8,6 +8,10 @@
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [{
+    "matches": ["*://*.youtube.com/*"],
+    "js": ["timer.js"]
+  }],
   "declarative_net_request": {
     "rule_resources": [{
       "id": "ruleset",

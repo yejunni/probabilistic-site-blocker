@@ -11,8 +11,9 @@ const resultEl = document.getElementById('result');
 const durationsEl = document.getElementById('durations');
 const durationButtonsEl = document.getElementById('durationButtons');
 
-// 쿨타임 카운트다운을 1초마다 돌리는 타이머. 필요 없어지면 멈추려고 담아둔다
-let cooldownTimer = null;
+// 1초마다 화면을 새로 그리는 타이머.
+// 이게 없으면 화면을 연 순간의 확률이 그대로 멈춰 있게 된다.
+let ticker = null;
 
 
 // background.js에게 말을 거는 함수.
@@ -30,16 +31,16 @@ function render(status) {
   // 확률은 소수점 한 자리까지
   probEl.textContent = status.prob.toFixed(1) + '%';
 
+  // 기다린 시간을 "3분 42초"로 보여준다.
+  // 분만 보여주면 첫 1분 동안 계속 "0분"이라 멈춘 것처럼 느껴진다.
+  const totalSec = Math.floor(status.elapsedMin * 60);
+  const waitMin = Math.floor(totalSec / 60);
+  const waitSec = totalSec % 60;
+
   infoEl.textContent =
-    `기다린 시간 ${Math.floor(status.elapsedMin)}분` +
+    `기다린 시간 ${waitMin}분 ${waitSec}초` +
     ` · 오늘 ${status.usedTodayMin}분 사용` +
     ` · ${status.remainingMin}분 남음`;
-
-  // 이전에 돌던 카운트다운이 있으면 멈춘다
-  if (cooldownTimer) {
-    clearInterval(cooldownTimer);
-    cooldownTimer = null;
-  }
 
   if (status.remainingMin <= 0) {
     // 한도를 다 썼으면 판정 자체를 안 한다
@@ -47,9 +48,9 @@ function render(status) {
     attemptBtn.textContent = '오늘 한도를 다 썼습니다';
 
   } else if (status.cooldownLeftSec > 0) {
-    // 거부당한 직후. 남은 초를 1초마다 줄여서 보여준다
+    // 거부당한 직후. 남은 초는 background.js가 계산해서 보내준다
     attemptBtn.disabled = true;
-    startCooldownCountdown(status.cooldownLeftSec);
+    attemptBtn.textContent = `${status.cooldownLeftSec}초 후 다시 시도`;
 
   } else {
     attemptBtn.disabled = false;
@@ -58,29 +59,23 @@ function render(status) {
 }
 
 
-function startCooldownCountdown(seconds) {
-  let left = seconds;
-  attemptBtn.textContent = `${left}초 후 다시 시도`;
-
-  cooldownTimer = setInterval(async () => {
-    left = left - 1;
-
-    if (left > 0) {
-      attemptBtn.textContent = `${left}초 후 다시 시도`;
-    } else {
-      // 쿨타임이 끝났다. 그동안 확률도 올라갔으니 새로 받아서 다시 그린다
-      clearInterval(cooldownTimer);
-      cooldownTimer = null;
-      refresh();
-    }
-  }, 1000);
-}
-
-
 // background.js에서 최신 상태를 받아와 화면을 새로 그린다
 async function refresh() {
   const status = await ask({ type: 'GET_STATUS' });
   render(status);
+}
+
+
+// 1초마다 refresh를 돌려서 확률과 시간이 실제로 흘러가게 만든다.
+// 계산은 전부 background.js가 하므로 여기서는 물어보기만 한다.
+function startTicking() {
+  if (ticker) return;
+  ticker = setInterval(refresh, 1000);
+}
+
+function stopTicking() {
+  clearInterval(ticker);
+  ticker = null;
 }
 
 
@@ -96,20 +91,25 @@ attemptBtn.addEventListener('click', async () => {
 
   if (outcome.blocked) {
     // 누르는 순간 쿨타임이나 한도에 걸려서 판정 자체를 못 한 경우.
-    // 뽑은 값이 없으므로 결과를 표시하지 않고 상태만 새로 그린다.
+    // 주사위를 굴리지도 않았으므로 결과를 표시하지 않는다.
     resultEl.textContent = '';
     resultEl.className = '';
     render(outcome.status);
 
   } else if (outcome.passed) {
-    resultEl.textContent = `통과! (확률 ${outcome.prob.toFixed(1)}% / 뽑은 값 ${outcome.roll.toFixed(1)})`;
+    // 주사위가 확률보다 작게 나오면 통과다.
+    // 예: 확률 71.8%일 때 0~71.8 사이가 나오면 통과 → 100번 중 약 72번
+    resultEl.textContent =
+      `통과!  주사위 ${outcome.roll.toFixed(1)} < 확률 ${outcome.prob.toFixed(1)}`;
     resultEl.className = 'pass';
 
     attemptBtn.hidden = true;
+    stopTicking();   // 시간 선택 화면에서는 갱신을 멈춘다
     showDurationButtons(outcome.status.durationOptions);
 
   } else {
-    resultEl.textContent = `거부 (확률 ${outcome.prob.toFixed(1)}% / 뽑은 값 ${outcome.roll.toFixed(1)})`;
+    resultEl.textContent =
+      `거부  주사위 ${outcome.roll.toFixed(1)} ≥ 확률 ${outcome.prob.toFixed(1)}`;
     resultEl.className = 'fail';
 
     // 쿨타임이 걸린 최신 상태를 받아 다시 그린다
@@ -157,5 +157,6 @@ document.getElementById('devUsedBtn').addEventListener('click', async () => {
 });
 
 
-// 화면이 열리면 일단 한 번 상태를 받아온다
+// 화면이 열리면 한 번 그린 뒤, 1초마다 계속 갱신한다
 refresh();
+startTicking();

@@ -159,9 +159,13 @@ async function attempt() {
   const passed = roll < status.prob;
 
   if (!passed) {
-    // 거부: 쿨타임을 건다. 기준 시각(waitStartAt)은 건드리지 않으므로
-    // 쿨타임이 끝나면 확률이 조금 더 올라가 있다.
-    await saveState({ cooldownUntil: Date.now() + CONFIG.cooldownSec * 1000 });
+    // 거부: 쿨타임을 걸고, 기준 시각도 지금으로 되돌린다.
+    // 확률이 0%부터 다시 자라므로 한 번 실패하면 처음부터 다시 기다려야 한다.
+    const now = Date.now();
+    await saveState({
+      cooldownUntil: now + CONFIG.cooldownSec * 1000,
+      waitStartAt: now
+    });
   }
 
   return { passed, roll, prob: status.prob, status: await buildStatus() };
@@ -247,6 +251,12 @@ async function handleMessage(message) {
 
     case 'ATTEMPT':
       return await attempt();
+
+    // 유튜브 위에 뜨는 타이머(timer.js)가 "언제 끝나요?"라고 물어볼 때
+    case 'GET_SESSION': {
+      const state = await loadState();
+      return { sessionEndAt: state.sessionEndAt };
+    }
 
     case 'START_SESSION':
       return await startSession(message.minutes);
