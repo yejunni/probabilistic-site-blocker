@@ -3,9 +3,46 @@
 <head>
   <meta charset="UTF-8">
   <title>차단됨</title>
+  <!-- 꾸미는 건 나중에. 지금은 동작 확인용 최소 스타일만 -->
+  <style>
+    body { font-family: sans-serif; text-align: center; padding-top: 60px; }
+    #prob { font-size: 72px; font-weight: bold; margin: 0; }
+    #info { color: #666; margin-bottom: 30px; }
+    button { font-size: 16px; padding: 10px 20px; margin: 4px; cursor: pointer; }
+    #result { font-size: 24px; font-weight: bold; min-height: 40px; margin: 20px 0; }
+    .pass { color: green; }
+    .fail { color: red; }
+    #dev { margin-top: 60px; padding-top: 20px; border-top: 1px solid #ddd; color: #999; font-size: 13px; }
+    #dev input { width: 50px; }
+  </style>
 </head>
-<body style="font-family: sans-serif; text-align: center; padding-top: 100px;">
-  <h1>차단되었습니다</h1>
-  <p>확장이 정상 작동 중입니다.</p>
+<body>
+
+  <p id="prob">--%</p>
+  <p id="info">불러오는 중...</p>
+
+  <!-- 시도 버튼 -->
+  <button id="attemptBtn">시도하기</button>
+
+  <!-- 판정 결과가 여기 표시된다 -->
+  <div id="result"></div>
+
+  <!-- 통과했을 때만 보이는 시간 선택 버튼들. blocked.js가 채워 넣는다 -->
+  <div id="durations" hidden>
+    <p>몇 분 쓸까요?</p>
+    <div id="durationButtons"></div>
+  </div>
+
+  <!-- 테스트용. 나중에 이 블록 통째로 지우면 된다 -->
+  <div id="dev">
+    <p>테스트용</p>
+    <label>경과 <input id="devElapsed" type="number" value="80">분으로</label>
+    <button id="devElapsedBtn">적용</button>
+    &nbsp;&nbsp;
+    <label>오늘 사용 <input id="devUsed" type="number" value="0">분으로</label>
+    <button id="devUsedBtn">적용</button>
+  </div>
+
+  <script src="blocked.js"></script>
 </body>
 </html>
