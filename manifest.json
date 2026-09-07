@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "확률 기반 사이트 차단",
+  "version": "0.1",
+  "description": "확률에 따라 사이트 접속을 허용하거나 차단합니다",
+  "permissions": ["declarativeNetRequest", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "declarative_net_request": {
+    "rule_resources": [{
+      "id": "ruleset",
+      "enabled": true,
+      "path": "rules.json"
+    }]
+  }
+}
