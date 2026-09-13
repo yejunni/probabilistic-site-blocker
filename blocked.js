@@ -9,7 +9,6 @@ const infoEl = document.getElementById('info');
 const attemptBtn = document.getElementById('attemptBtn');
 const resultEl = document.getElementById('result');
 const durationsEl = document.getElementById('durations');
-const durationButtonsEl = document.getElementById('durationButtons');
 
 // 1초마다 화면을 새로 그리는 타이머.
 // 이게 없으면 화면을 연 순간의 확률이 그대로 멈춰 있게 된다.
@@ -105,7 +104,7 @@ attemptBtn.addEventListener('click', async () => {
 
     attemptBtn.hidden = true;
     stopTicking();   // 시간 선택 화면에서는 갱신을 멈춘다
-    showDurationButtons(outcome.status.durationOptions);
+    showDurationPicker(outcome.status.remainingMin);
 
   } else {
     resultEl.textContent =
@@ -136,26 +135,87 @@ document.getElementById('settingsBtn').addEventListener('click', () => {
 });
 
 
-// 통과했을 때 고른 시간만큼 버튼을 만들어 붙인다.
-// 남은 한도보다 큰 선택지는 background.js가 미리 걸러서 보내준다.
-function showDurationButtons(options) {
-  durationButtonsEl.innerHTML = '';
+// ─────────────────────────────────────────────────────────────
+// 이용 시간 정하기
+// ─────────────────────────────────────────────────────────────
 
-  for (const minutes of options) {
-    const btn = document.createElement('button');
-    btn.textContent = minutes + '분';
+// 이번에 고를 수 있는 최대 분. showDurationPicker에서 정해진다.
+let maxMinutes = 0;
 
-    btn.addEventListener('click', async () => {
-      await ask({ type: 'START_SESSION', minutes: minutes });
-      // 차단이 풀렸으니 유튜브로 보낸다
-      location.href = 'https://www.youtube.com';
-    });
 
-    durationButtonsEl.appendChild(btn);
-  }
+// 통과했을 때 시간 정하는 부분을 보여준다.
+// 정해진 버튼 목록 대신 1분 ~ 남은 한도 사이에서 자유롭게 고른다.
+function showDurationPicker(remainingMin) {
+  maxMinutes = remainingMin;
+
+  const input = document.getElementById('minutesInput');
+  input.max = remainingMin;
+
+  // 기본값은 10분. 남은 한도가 그보다 적으면 남은 만큼만.
+  input.value = Math.min(10, remainingMin);
 
   durationsEl.hidden = false;
+  updateMinutesHint();
 }
+
+
+// 지금 적힌 값이 쓸 수 있는 값인지 보고, 안내 문구와 시작 버튼을 갱신한다.
+//
+// 값을 강제로 고쳐 쓰지는 않는다. 타이핑 도중에 숫자가 멋대로 바뀌면
+// 지우고 다시 치기가 어려워지기 때문이다. 대신 범위를 벗어나면
+// 시작 버튼을 잠가서 넘어가지 못하게 한다.
+function updateMinutesHint() {
+  const input = document.getElementById('minutesInput');
+  const hint = document.getElementById('minutesHint');
+  const startBtn = document.getElementById('startBtn');
+
+  const text = input.value.trim();
+  const value = Math.floor(Number(text));
+  const usable = text !== '' && Number.isFinite(value)
+              && value >= 1 && value <= maxMinutes;
+
+  startBtn.disabled = !usable;
+
+  if (!usable) {
+    hint.textContent = `1 ~ ${maxMinutes}분 사이로 정해주세요`;
+  } else if (value === maxMinutes) {
+    hint.textContent = '남은 한도를 전부 씁니다';
+  } else {
+    hint.textContent = `남은 한도 ${maxMinutes}분 중 ${value}분`;
+  }
+}
+
+
+// +/- 버튼. 여기서는 범위 안으로 바로잡아 준다.
+function stepMinutes(delta) {
+  const input = document.getElementById('minutesInput');
+  const current = Math.floor(Number(input.value)) || 0;
+
+  input.value = Math.min(Math.max(current + delta, 1), maxMinutes);
+  updateMinutesHint();
+}
+
+
+for (const button of document.querySelectorAll('#stepper [data-step]')) {
+  button.addEventListener('click', () => stepMinutes(Number(button.dataset.step)));
+}
+
+document.getElementById('minutesInput').addEventListener('input', updateMinutesHint);
+
+
+document.getElementById('startBtn').addEventListener('click', async () => {
+  const minutes = Math.floor(Number(document.getElementById('minutesInput').value));
+  const result = await ask({ type: 'START_SESSION', minutes: minutes });
+
+  // background가 한 번 더 검사한다. 거절당하면 이유를 보여주고 멈춘다.
+  if (!result.ok) {
+    document.getElementById('minutesHint').textContent = result.error;
+    return;
+  }
+
+  // 차단이 풀렸으니 유튜브로 보낸다
+  location.href = 'https://www.youtube.com';
+});
 
 
 // ─────────────────────────────────────────────────────────────

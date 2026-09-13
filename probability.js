@@ -69,6 +69,15 @@ function pointsProb(elapsedMin, s) {
     .sort((a, b) => a.x - b.x)
     .filter((p, i, arr) => i === 0 || p.x > arr[i - 1].x);
 
+  // 0분을 찍어두지 않았으면 (0, 0)을 몰래 하나 끼워넣는다.
+  //
+  // 이게 없으면 첫 점이 10분일 때 0~10분 구간이 그 점의 높이로 평평해진다.
+  // 기다리지도 않았는데 확률이 붙는 셈이라 말이 안 된다.
+  // scurve에서 0분을 정확히 0%로 맞춘 것과 같은 이유다.
+  if (pts.length > 0 && pts[0].x > 0) {
+    pts.unshift({ x: 0, y: 0 });
+  }
+
   const n = pts.length;
   if (n === 0) return 0;
   if (n === 1) return pts[0].y;

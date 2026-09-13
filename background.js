@@ -118,9 +118,10 @@ const SETTING_RULES = {
   // 공통
   maxProb:       { label: '확률 상한',     type: 'number', min: 50,   max: 100, step: 1 },
   dailyLimit:    { label: '하루 이용 한도', type: 'number', min: 10,   max: 180, step: 5 },
-  usagePenalty:  { label: '사용량 보정',   type: 'number', min: 0,    max: 1,   step: 0.05 },
-  cooldownSec:   { label: '거부 후 대기',  type: 'number', min: 0,    max: 300, step: 5 },
-  durationOptions: { label: '이용 시간 선택지', type: 'minutes' }
+  usagePenalty:  { label: '사용량 보정',   type: 'number', min: 0,    max: 1,   step: 0.05 }
+  // 없앤 항목:
+  //   cooldownSec     - 거부 후 대기. attempt()의 설명 참고
+  //   durationOptions - 이용 시간 선택지. 차단 화면에서 직접 정하도록 바뀜
 };
 
 
@@ -193,24 +194,6 @@ function validateSettings(input) {
     } else if (rule.type === 'points') {
       const cleaned = cleanPoints(value, errors);
       if (cleaned) settings[key] = cleaned;
-
-    // ── 이용 시간 선택지 ──
-    } else if (rule.type === 'minutes') {
-      const cleaned = cleanMinutes(value, errors);
-      if (cleaned) settings[key] = cleaned;
-    }
-  }
-
-  // ── 항목끼리 엮인 검사 ──
-  // 선택지가 전부 하루 한도보다 크면, 통과해도 고를 수 있는 시간이 없다.
-  // 판정만 통과하고 아무것도 못 하는 상태가 되므로 막는다.
-  if (settings.durationOptions && settings.dailyLimit) {
-    const usable = settings.durationOptions.some(min => min <= settings.dailyLimit);
-    if (!usable) {
-      errors.push(
-        `이용 시간 선택지가 전부 하루 한도(${settings.dailyLimit}분)보다 큽니다. ` +
-        `통과해도 시간을 고를 수 없게 됩니다`
-      );
     }
   }
 
@@ -257,32 +240,6 @@ function cleanPoints(value, errors) {
   }
 
   return cleaned;
-}
-
-
-// 이용 시간 선택지를 검사하고 중복 제거 + 정렬해서 돌려준다.
-function cleanMinutes(value, errors) {
-  if (!Array.isArray(value) || value.length === 0) {
-    errors.push('이용 시간 선택지: 최소 하나는 있어야 합니다');
-    return null;
-  }
-
-  const numbers = [];
-  for (const item of value) {
-    const num = Number(item);
-    if (!Number.isFinite(num)) {
-      errors.push('이용 시간 선택지: 숫자가 아닌 값이 있습니다');
-      return null;
-    }
-    if (num < 1 || num > 300) {
-      errors.push(`이용 시간 선택지: 1~300분이어야 합니다 (받은 값 ${num})`);
-      return null;
-    }
-    numbers.push(num);
-  }
-
-  // 중복을 없애고 작은 것부터 정렬한다
-  return [...new Set(numbers)].sort((a, b) => a - b);
 }
 
 
@@ -358,10 +315,6 @@ async function buildStatus() {
     // 세 번째 인자로 설정을 넘겨야 사용자가 바꾼 곡선이 반영된다.
     prob: calcProb(elapsedMin, state.usedTodayMin, settings),
 
-    // 남은 한도 안에서 고를 수 있는 시간만 추린다.
-    // 예: 7분 남았으면 [5]만 나온다
-    durationOptions: settings.durationOptions.filter(min => min <= remainingMin),
-
     // 버튼을 누를 수 있는 상태인지
     canAttempt: remainingMin > 0 && cooldownLeftSec === 0
   };
@@ -387,13 +340,16 @@ async function attempt() {
   const passed = roll < status.prob;
 
   if (!passed) {
-    // 거부: 쿨타임을 걸고, 기준 시각도 지금으로 되돌린다.
+    // 거부: 기준 시각을 지금으로 되돌린다.
     // 확률이 0%부터 다시 자라므로 한 번 실패하면 처음부터 다시 기다려야 한다.
-    const now = Date.now();
-    const settings = await loadSettings();
+    //
+    // 따로 대기 시간을 걸지 않는 이유:
+    // 모든 곡선은 0분에서 정확히 0%다. 그래서 연타해도 "난수 < 0"이
+    // 참이 되지 않아 어차피 계속 실패한다. 대기가 하는 일이 없었다.
+    // (cooldownUntil을 null로 지우는 건 예전에 저장된 값을 치우려는 것)
     await saveState({
-      cooldownUntil: now + settings.cooldownSec * 1000,
-      waitStartAt: now
+      waitStartAt: Date.now(),
+      cooldownUntil: null
     });
   }
 
@@ -404,8 +360,23 @@ async function attempt() {
 // 시간을 고르고 나서. 차단을 풀고 알람을 맞춘다.
 async function startSession(minutes) {
   const state = await loadState();
+  const settings = await loadSettings();
+  const remainingMin = Math.max(settings.dailyLimit - state.usedTodayMin, 0);
+
+  // 화면이 보낸 값을 그대로 믿지 않는다.
+  // 예전에는 차단 화면이 정해진 버튼만 눌렀지만, 이제 사용자가 직접 숫자를
+  // 정하므로 여기서 막아야 한다. 콘솔에서 직접 메시지를 보내는 것도 마찬가지다.
+  const wanted = Math.floor(Number(minutes));
+
+  if (!Number.isFinite(wanted) || wanted < 1) {
+    return { ok: false, error: '이용 시간은 1분 이상이어야 합니다' };
+  }
+  if (wanted > remainingMin) {
+    return { ok: false, error: `남은 한도(${remainingMin}분)를 넘을 수 없습니다` };
+  }
+
   const now = Date.now();
-  const endAt = now + minutes * 60000;
+  const endAt = now + wanted * 60000;
 
   await setAllowRule(true);
 
@@ -413,7 +384,7 @@ async function startSession(minutes) {
     sessionEndAt: endAt,
     // 사용량은 '끝날 때'가 아니라 '시작할 때' 미리 차감한다.
     // 도중에 브라우저를 꺼버려도 기록이 남게 하려는 것.
-    usedTodayMin: state.usedTodayMin + minutes,
+    usedTodayMin: state.usedTodayMin + wanted,
     cooldownUntil: null
   });
 

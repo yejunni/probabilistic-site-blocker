@@ -14,6 +14,27 @@
     .fail { color: red; }
     #dev { margin-top: 60px; padding-top: 20px; border-top: 1px solid #ddd; color: #999; font-size: 13px; }
     #dev input { width: 50px; }
+
+    /* 이용 시간 정하기 — 위에 +, 가운데 숫자, 아래에 - */
+    #stepper {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .step-row { display: flex; gap: 6px; }
+    .step-row button { min-width: 58px; margin: 0; }
+
+    .step-value { display: flex; align-items: baseline; gap: 4px; }
+    #minutesInput {
+      width: 110px;
+      font-size: 34px;
+      font-weight: bold;
+      text-align: center;
+    }
+
+    #minutesHint { color: #666; font-size: 13px; min-height: 18px; }
+    #startBtn { font-size: 18px; padding: 10px 28px; }
   </style>
 </head>
 <body>
@@ -32,10 +53,35 @@
   <!-- 판정 결과가 여기 표시된다 -->
   <div id="result"></div>
 
-  <!-- 통과했을 때만 보이는 시간 선택 버튼들. blocked.js가 채워 넣는다 -->
+  <!-- 통과했을 때만 보이는 시간 정하기 -->
   <div id="durations" hidden>
     <p>몇 분 쓸까요?</p>
-    <div id="durationButtons"></div>
+
+    <!--
+      +1 / -1 버튼은 두지 않는다.
+      숫자 입력칸에 원래 달린 화살표(↑↓)와 키보드 방향키가 그 일을 한다.
+      min/max를 걸어뒀으므로 그 화살표도 범위를 넘지 않는다.
+    -->
+    <div id="stepper">
+      <div class="step-row">
+        <button data-step="5">+5</button>
+        <button data-step="10">+10</button>
+      </div>
+
+      <!-- 직접 쳐 넣어도 되도록 입력칸으로 뒀다 -->
+      <div class="step-value">
+        <input id="minutesInput" type="number" min="1" value="10">
+        <span>분</span>
+      </div>
+
+      <div class="step-row">
+        <button data-step="-5">-5</button>
+        <button data-step="-10">-10</button>
+      </div>
+    </div>
+
+    <p id="minutesHint"></p>
+    <button id="startBtn">시작하기</button>
   </div>
 
   <!-- 테스트용. 나중에 이 블록 통째로 지우면 된다 -->
