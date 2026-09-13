@@ -16,6 +16,20 @@ const ALLOW_RULE_ID = 1000;
 const SESSION_ALARM = 'sessionEnd';
 
 
+// 상태를 어디에 저장할지.
+//
+//   chrome.storage.sync  : 같은 구글 계정으로 로그인한 프로필끼리 값을 공유한다.
+//                          프로필 A에서 60분을 다 쓰면 프로필 B에서도 0분 남음.
+//   chrome.storage.local : 이 프로필 안에만 저장된다.
+//
+// 프로필을 바꿔서 한도를 초기화하는 우회를 막으려고 sync를 쓴다.
+// 단, 아예 다른 구글 계정으로 가거나 로그인을 안 하면 공유되지 않는다.
+// (확장으로 막을 수 있는 한계가 여기까지다)
+//
+// sync가 말썽이면 이 한 줄만 local로 바꾸면 원래대로 돌아온다.
+const STORE = chrome.storage.sync;
+
+
 // ─────────────────────────────────────────────────────────────
 // 저장소 다루기
 // ─────────────────────────────────────────────────────────────
@@ -40,14 +54,14 @@ function getTodayKey() {
 
 // 저장된 값을 전부 읽어온다. 날짜가 바뀌었으면 오늘 사용량을 0으로 되돌린다.
 async function loadState() {
-  const saved = await chrome.storage.local.get();
+  const saved = await STORE.get();
   const state = { ...DEFAULT_STATE, ...saved };
 
   const today = getTodayKey();
   if (state.todayKey !== today) {
     state.todayKey = today;
     state.usedTodayMin = 0;
-    await chrome.storage.local.set({ todayKey: today, usedTodayMin: 0 });
+    await STORE.set({ todayKey: today, usedTodayMin: 0 });
   }
 
   return state;
@@ -55,8 +69,12 @@ async function loadState() {
 
 
 // 바꾸고 싶은 값만 골라서 저장한다. (예: saveState({ usedTodayMin: 15 }))
+//
+// sync는 쓰기 횟수에 제한이 있다(분당 120회). 그래서 이 함수는
+// 판정할 때와 세션을 시작·종료할 때만 부른다.
+// 차단 화면이 1초마다 하는 건 읽기뿐이라 제한에 걸리지 않는다.
 async function saveState(changes) {
-  await chrome.storage.local.set(changes);
+  await STORE.set(changes);
 }
 
 
@@ -131,8 +149,8 @@ async function buildStatus() {
     prob: calcProb(elapsedMin, state.usedTodayMin),
 
     // 남은 한도 안에서 고를 수 있는 시간만 추린다.
-    // 예: 7분 남았으면 [5]만 나온다
-    durationOptions: [5, 10, 20, 30].filter(min => min <= remainingMin),
+    // 목록 자체는 config.js에 있다. 예: 7분 남았으면 [5]만 나온다
+    durationOptions: CONFIG.durationOptions.filter(min => min <= remainingMin),
 
     // 버튼을 누를 수 있는 상태인지
     canAttempt: remainingMin > 0 && cooldownLeftSec === 0
@@ -261,11 +279,16 @@ async function handleMessage(message) {
     case 'START_SESSION':
       return await startSession(message.minutes);
 
+    // 아래 두 개는 테스트용. CONFIG.devMode가 꺼져 있으면 무시한다.
+    // 화면에서 버튼을 숨기는 것과 별개로, 요청 자체도 막아둬야
+    // 콘솔에서 직접 보내는 식으로 한도를 늘릴 수 없다.
     case 'DEV_SET_ELAPSED':
+      if (!CONFIG.devMode) return { error: '테스트 모드가 꺼져 있습니다' };
       await devSetElapsed(message.minutes);
       return await buildStatus();
 
     case 'DEV_SET_USED':
+      if (!CONFIG.devMode) return { error: '테스트 모드가 꺼져 있습니다' };
       await devSetUsed(message.minutes);
       return await buildStatus();
 
@@ -299,7 +322,12 @@ async function reconcile() {
     // 이용 중이었는데 시간이 이미 지났다 → 지금 끝낸 걸로 처리
     await endSession();
   } else {
-    // 아직 이용 중이다 → 알람을 다시 맞춰둔다
+    // 아직 이용 중이다 → 통과 규칙과 알람을 다시 세운다.
+    //
+    // 규칙까지 다시 세우는 이유: 상태(sessionEndAt)는 sync로 프로필 간에
+    // 공유되지만, 차단 해제 규칙은 프로필마다 따로 갖고 있다.
+    // 이게 없으면 다른 프로필이 "이용 중"인 줄만 알고 유튜브는 막혀 있게 된다.
+    await setAllowRule(true);
     chrome.alarms.create(SESSION_ALARM, { when: state.sessionEndAt });
   }
 }

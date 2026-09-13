@@ -141,20 +141,27 @@ function showDurationButtons(options) {
 
 
 // ─────────────────────────────────────────────────────────────
-// 테스트용 (나중에 이 블록과 HTML의 #dev를 함께 지우면 된다)
+// 테스트용
+// config.js의 devMode가 false면 이 칸이 통째로 사라진다.
+// 코드를 지울 필요 없이 그 한 줄만 바꾸면 된다.
 // ─────────────────────────────────────────────────────────────
 
-document.getElementById('devElapsedBtn').addEventListener('click', async () => {
-  const minutes = Number(document.getElementById('devElapsed').value);
-  const status = await ask({ type: 'DEV_SET_ELAPSED', minutes: minutes });
-  render(status);
-});
+if (CONFIG.devMode) {
+  document.getElementById('devElapsedBtn').addEventListener('click', async () => {
+    const minutes = Number(document.getElementById('devElapsed').value);
+    const status = await ask({ type: 'DEV_SET_ELAPSED', minutes: minutes });
+    render(status);
+  });
 
-document.getElementById('devUsedBtn').addEventListener('click', async () => {
-  const minutes = Number(document.getElementById('devUsed').value);
-  const status = await ask({ type: 'DEV_SET_USED', minutes: minutes });
-  render(status);
-});
+  document.getElementById('devUsedBtn').addEventListener('click', async () => {
+    const minutes = Number(document.getElementById('devUsed').value);
+    const status = await ask({ type: 'DEV_SET_USED', minutes: minutes });
+    render(status);
+  });
+
+} else {
+  document.getElementById('dev').hidden = true;
+}
 
 
 // 화면이 열리면 한 번 그린 뒤, 1초마다 계속 갱신한다
