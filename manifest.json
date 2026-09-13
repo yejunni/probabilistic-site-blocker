@@ -8,6 +8,10 @@
   "background": {
     "service_worker": "background.js"
   },
+  "options_page": "options.html",
+  "action": {
+    "default_title": "확률 기반 사이트 차단 — 설정"
+  },
   "content_scripts": [{
     "matches": ["*://*.youtube.com/*"],
     "js": ["timer.js"]

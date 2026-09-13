@@ -100,7 +100,7 @@ attemptBtn.addEventListener('click', async () => {
     // 주사위가 확률보다 작게 나오면 통과다.
     // 예: 확률 71.8%일 때 0~71.8 사이가 나오면 통과 → 100번 중 약 72번
     resultEl.textContent =
-      `통과!  주사위 ${outcome.roll.toFixed(1)} < 확률 ${outcome.prob.toFixed(1)}`;
+      `통과!`;
     resultEl.className = 'pass';
 
     attemptBtn.hidden = true;
@@ -109,7 +109,7 @@ attemptBtn.addEventListener('click', async () => {
 
   } else {
     resultEl.textContent =
-      `거부  주사위 ${outcome.roll.toFixed(1)} ≥ 확률 ${outcome.prob.toFixed(1)}`;
+      `실패`;
     resultEl.className = 'fail';
 
     // 쿨타임이 걸린 최신 상태를 받아 다시 그린다
@@ -118,7 +118,25 @@ attemptBtn.addEventListener('click', async () => {
 });
 
 
-// 통과했을 때 5 / 10 / 20 / 30분 버튼을 만들어 붙인다.
+// [설정] 버튼. 확장의 옵션 화면을 새 탭으로 연다.
+document.getElementById('settingsBtn').addEventListener('click', () => {
+  // 주소를 직접 만들어 여는 방법. 확장 ID가 바뀌어도 알아서 맞춰준다.
+  const openDirectly = () => window.open(chrome.runtime.getURL('options.html'));
+
+  // 원래는 이 한 줄이면 된다.
+  // 다만 manifest의 options_page가 아직 반영되지 않았으면 조용히 실패한다.
+  // 그때는 주소로 직접 열어서라도 설정에 들어갈 수 있게 한다.
+  try {
+    chrome.runtime.openOptionsPage(() => {
+      if (chrome.runtime.lastError) openDirectly();
+    });
+  } catch (e) {
+    openDirectly();
+  }
+});
+
+
+// 통과했을 때 고른 시간만큼 버튼을 만들어 붙인다.
 // 남은 한도보다 큰 선택지는 background.js가 미리 걸러서 보내준다.
 function showDurationButtons(options) {
   durationButtonsEl.innerHTML = '';

@@ -79,6 +79,214 @@ async function saveState(changes) {
 
 
 // ─────────────────────────────────────────────────────────────
+// 사용자 설정 다루기
+//
+// config.js의 CONFIG는 이제 '공장 초기값' 역할만 한다.
+// 사용자가 옵션 화면에서 바꾼 값은 storage의 'settings' 키 하나에
+// 통째로 들어가고, 저장된 값이 기본값을 덮어쓴다.
+//
+// storage를 만지는 건 아래 loadSettings / saveSettings 두 함수뿐이다.
+// 나중에 Supabase로 옮길 때 이 둘만 고치면 나머지는 손댈 게 없다.
+// ─────────────────────────────────────────────────────────────
+
+// 사용자가 바꿀 수 있는 항목과 허용 범위.
+// 여기 없는 항목(devMode 등)은 옵션 화면에서 못 바꾼다.
+//
+// 옵션 화면도 이 표를 받아가서 슬라이더의 min/max를 정한다.
+// 범위를 두 군데 적어두면 언젠가 어긋나기 때문이다.
+const SETTING_RULES = {
+  curve: {
+    label: '확률 곡선', type: 'choice',
+    choices: ['scurve', 'log', 'linear', 'points']
+  },
+
+  // scurve 전용
+  midpoint:      { label: '중간 지점',     type: 'number', min: 10,   max: 180, step: 1 },
+  steepness:     { label: '기울기',        type: 'number', min: 0.01, max: 0.2, step: 0.01 },
+
+  // log 전용
+  anchorMinutes: { label: '기준 시점',     type: 'number', min: 10,   max: 180, step: 1 },
+  anchorProb:    { label: '기준 확률',     type: 'number', min: 10,   max: 100, step: 1 },
+  smoothness:    { label: '초반 완만함',   type: 'number', min: 5,    max: 100, step: 1 },
+
+  // linear 전용
+  linearFullMin: { label: '상한 도달 시점', type: 'number', min: 10,   max: 300, step: 1 },
+
+  // points 전용
+  points:        { label: '곡선 점',       type: 'points' },
+
+  // 공통
+  maxProb:       { label: '확률 상한',     type: 'number', min: 50,   max: 100, step: 1 },
+  dailyLimit:    { label: '하루 이용 한도', type: 'number', min: 10,   max: 180, step: 5 },
+  usagePenalty:  { label: '사용량 보정',   type: 'number', min: 0,    max: 1,   step: 0.05 },
+  cooldownSec:   { label: '거부 후 대기',  type: 'number', min: 0,    max: 300, step: 5 },
+  durationOptions: { label: '이용 시간 선택지', type: 'minutes' }
+};
+
+
+// CONFIG에서 '사용자가 바꿀 수 있는 항목'만 뽑아낸다.
+function getDefaultSettings() {
+  const defaults = {};
+  for (const key of Object.keys(SETTING_RULES)) {
+    defaults[key] = CONFIG[key];
+  }
+  return defaults;
+}
+
+
+// 저장된 설정을 읽는다. 저장된 게 없는 항목은 기본값을 쓴다.
+// ★ 설정을 읽는 통로는 여기 하나뿐이다.
+async function loadSettings() {
+  const saved = await STORE.get('settings');
+  return { ...getDefaultSettings(), ...(saved.settings || {}) };
+}
+
+
+// 설정을 저장한다. 범위를 벗어난 값이 하나라도 있으면 전부 거부한다.
+// ★ 설정을 쓰는 통로는 여기 하나뿐이다.
+//
+// 일부만 저장하지 않고 전부 거부하는 이유: 반쯤 적용된 설정이 제일 헷갈린다.
+async function saveSettings(changes) {
+  const merged = { ...(await loadSettings()), ...changes };
+  const checked = validateSettings(merged);
+
+  if (!checked.ok) {
+    return { ok: false, errors: checked.errors };
+  }
+
+  await STORE.set({ settings: checked.settings });
+  return { ok: true, settings: checked.settings };
+}
+
+
+// 값이 제대로 된 것인지 확인하고, 깔끔하게 정리해서 돌려준다.
+// 화면에서 막는 것과 별개로 여기서 한 번 더 본다.
+// 화면은 얼마든지 우회할 수 있기 때문이다.
+function validateSettings(input) {
+  const errors = [];
+  const settings = {};
+
+  for (const key of Object.keys(SETTING_RULES)) {
+    const rule = SETTING_RULES[key];
+    const value = input[key];
+
+    // ── 정해진 것 중 하나를 고르는 항목 (curve) ──
+    if (rule.type === 'choice') {
+      if (!rule.choices.includes(value)) {
+        errors.push(`${rule.label}: '${value}'는 없는 값입니다`);
+      } else {
+        settings[key] = value;
+      }
+
+    // ── 숫자 항목 ──
+    } else if (rule.type === 'number') {
+      const num = Number(value);
+      if (!Number.isFinite(num)) {
+        errors.push(`${rule.label}: 숫자가 아닙니다`);
+      } else if (num < rule.min || num > rule.max) {
+        errors.push(`${rule.label}: ${rule.min}~${rule.max} 범위를 벗어났습니다 (받은 값 ${num})`);
+      } else {
+        settings[key] = num;
+      }
+
+    // ── 곡선 점 목록 ──
+    } else if (rule.type === 'points') {
+      const cleaned = cleanPoints(value, errors);
+      if (cleaned) settings[key] = cleaned;
+
+    // ── 이용 시간 선택지 ──
+    } else if (rule.type === 'minutes') {
+      const cleaned = cleanMinutes(value, errors);
+      if (cleaned) settings[key] = cleaned;
+    }
+  }
+
+  // ── 항목끼리 엮인 검사 ──
+  // 선택지가 전부 하루 한도보다 크면, 통과해도 고를 수 있는 시간이 없다.
+  // 판정만 통과하고 아무것도 못 하는 상태가 되므로 막는다.
+  if (settings.durationOptions && settings.dailyLimit) {
+    const usable = settings.durationOptions.some(min => min <= settings.dailyLimit);
+    if (!usable) {
+      errors.push(
+        `이용 시간 선택지가 전부 하루 한도(${settings.dailyLimit}분)보다 큽니다. ` +
+        `통과해도 시간을 고를 수 없게 됩니다`
+      );
+    }
+  }
+
+  return { ok: errors.length === 0, errors, settings };
+}
+
+
+// 곡선 점 목록을 검사하고 x 순서로 정렬해서 돌려준다.
+// 문제가 있으면 errors에 담고 null을 돌려준다.
+function cleanPoints(value, errors) {
+  if (!Array.isArray(value) || value.length < 2) {
+    errors.push('곡선 점: 점이 2개 이상이어야 합니다');
+    return null;
+  }
+
+  const cleaned = [];
+  for (const point of value) {
+    const x = Number(point.x);
+    const y = Number(point.y);
+
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      errors.push('곡선 점: 숫자가 아닌 값이 있습니다');
+      return null;
+    }
+    if (x < 0 || x > 300) {
+      errors.push(`곡선 점: 시간은 0~300분이어야 합니다 (받은 값 ${x})`);
+      return null;
+    }
+    if (y < 0 || y > 100) {
+      errors.push(`곡선 점: 확률은 0~100%여야 합니다 (받은 값 ${y})`);
+      return null;
+    }
+    cleaned.push({ x, y });
+  }
+
+  cleaned.sort((a, b) => a.x - b.x);
+
+  // 시간이 같은 점이 둘 있으면 기울기 계산에서 0으로 나누게 된다
+  for (let i = 1; i < cleaned.length; i++) {
+    if (cleaned[i].x === cleaned[i - 1].x) {
+      errors.push(`곡선 점: 시간이 같은 점이 둘 있습니다 (${cleaned[i].x}분)`);
+      return null;
+    }
+  }
+
+  return cleaned;
+}
+
+
+// 이용 시간 선택지를 검사하고 중복 제거 + 정렬해서 돌려준다.
+function cleanMinutes(value, errors) {
+  if (!Array.isArray(value) || value.length === 0) {
+    errors.push('이용 시간 선택지: 최소 하나는 있어야 합니다');
+    return null;
+  }
+
+  const numbers = [];
+  for (const item of value) {
+    const num = Number(item);
+    if (!Number.isFinite(num)) {
+      errors.push('이용 시간 선택지: 숫자가 아닌 값이 있습니다');
+      return null;
+    }
+    if (num < 1 || num > 300) {
+      errors.push(`이용 시간 선택지: 1~300분이어야 합니다 (받은 값 ${num})`);
+      return null;
+    }
+    numbers.push(num);
+  }
+
+  // 중복을 없애고 작은 것부터 정렬한다
+  return [...new Set(numbers)].sort((a, b) => a - b);
+}
+
+
+// ─────────────────────────────────────────────────────────────
 // 차단 풀기 / 다시 막기
 // ─────────────────────────────────────────────────────────────
 
@@ -121,6 +329,7 @@ async function reloadYoutubeTabs() {
 // 차단 화면에 보여줄 정보를 한 덩어리로 만들어 준다.
 async function buildStatus() {
   const now = Date.now();
+  const settings = await loadSettings();   // CONFIG가 아니라 저장된 설정을 쓴다
   let state = await loadState();
 
   // 아직 기준 시각이 없다면(= 설치 후 처음 들어온 것) 지금을 기준으로 잡는다.
@@ -131,7 +340,7 @@ async function buildStatus() {
   }
 
   const elapsedMin = (now - state.waitStartAt) / 60000;
-  const remainingMin = Math.max(CONFIG.dailyLimit - state.usedTodayMin, 0);
+  const remainingMin = Math.max(settings.dailyLimit - state.usedTodayMin, 0);
 
   // 쿨타임이 이미 지났으면 0초로 취급한다
   const cooldownLeftSec = state.cooldownUntil
@@ -143,14 +352,15 @@ async function buildStatus() {
     usedTodayMin: state.usedTodayMin,
     remainingMin,
     cooldownLeftSec,
-    dailyLimit: CONFIG.dailyLimit,
+    dailyLimit: settings.dailyLimit,
 
-    // 실제 통과 확률 (probability.js가 계산)
-    prob: calcProb(elapsedMin, state.usedTodayMin),
+    // 실제 통과 확률 (probability.js가 계산).
+    // 세 번째 인자로 설정을 넘겨야 사용자가 바꾼 곡선이 반영된다.
+    prob: calcProb(elapsedMin, state.usedTodayMin, settings),
 
     // 남은 한도 안에서 고를 수 있는 시간만 추린다.
-    // 목록 자체는 config.js에 있다. 예: 7분 남았으면 [5]만 나온다
-    durationOptions: CONFIG.durationOptions.filter(min => min <= remainingMin),
+    // 예: 7분 남았으면 [5]만 나온다
+    durationOptions: settings.durationOptions.filter(min => min <= remainingMin),
 
     // 버튼을 누를 수 있는 상태인지
     canAttempt: remainingMin > 0 && cooldownLeftSec === 0
@@ -180,8 +390,9 @@ async function attempt() {
     // 거부: 쿨타임을 걸고, 기준 시각도 지금으로 되돌린다.
     // 확률이 0%부터 다시 자라므로 한 번 실패하면 처음부터 다시 기다려야 한다.
     const now = Date.now();
+    const settings = await loadSettings();
     await saveState({
-      cooldownUntil: now + CONFIG.cooldownSec * 1000,
+      cooldownUntil: now + settings.cooldownSec * 1000,
       waitStartAt: now
     });
   }
@@ -276,6 +487,20 @@ async function handleMessage(message) {
       return { sessionEndAt: state.sessionEndAt };
     }
 
+    // 옵션 화면이 열릴 때. 현재 설정과 함께 허용 범위표도 같이 보낸다.
+    // 범위를 옵션 화면에도 적어두면 언젠가 두 곳이 어긋나기 때문이다.
+    case 'GET_SETTINGS':
+      return {
+        settings: await loadSettings(),
+        rules: SETTING_RULES,
+        defaults: getDefaultSettings()
+      };
+
+    // 옵션 화면에서 [저장]을 눌렀을 때.
+    // 성공하면 { ok: true, settings }, 실패하면 { ok: false, errors: [...] }
+    case 'SET_SETTINGS':
+      return await saveSettings(message.settings);
+
     case 'START_SESSION':
       return await startSession(message.minutes);
 
@@ -306,6 +531,16 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === SESSION_ALARM) {
     endSession();
   }
+});
+
+
+// 툴바의 확장 아이콘을 눌렀을 때 설정 화면을 연다.
+//
+// manifest에 "action"이 있어야 툴바에 아이콘이 생긴다.
+// default_popup을 주지 않았으므로 클릭이 이 함수로 들어온다.
+// (설정으로 가는 입구가 chrome://extensions 세부정보 안에만 있어서 추가했다)
+chrome.action.onClicked.addListener(() => {
+  chrome.runtime.openOptionsPage();
 });
 
 

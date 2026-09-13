@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>설정 — 확률 기반 사이트 차단</title>
+
+  <!-- 꾸미기는 나중에. 지금은 알아볼 수 있을 정도만 -->
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 24px 16px 80px;
+      line-height: 1.6;
+    }
+    h1 { font-size: 20px; }
+    h2 { font-size: 15px; margin-bottom: 4px; }
+
+    section {
+      border-top: 1px solid #ddd;
+      padding-top: 16px;
+      margin-top: 24px;
+    }
+
+    /* 설정 한 줄: 이름 / 슬라이더 / 현재값 */
+    .row {
+      display: grid;
+      grid-template-columns: 130px 1fr 90px;
+      align-items: center;
+      gap: 10px;
+      margin: 8px 0;
+    }
+    .row .value { text-align: right; font-variant-numeric: tabular-nums; }
+
+    .hint { color: #666; font-size: 13px; margin: 4px 0; }
+    .hint.warn { color: #c23; }          /* 권장 범위를 벗어났을 때 */
+
+    button { font-size: 14px; padding: 7px 14px; margin-right: 6px; cursor: pointer; }
+
+    /* 선택한 곡선의 설정만 보이게 한다. 나머지는 JS가 hidden으로 숨긴다 */
+    [data-curve-group] {
+      background: #f7f7f7;
+      padding: 12px;
+      margin-top: 8px;
+      border-radius: 6px;
+    }
+
+    table { border-collapse: collapse; }
+    th, td { padding: 3px 8px; text-align: left; font-weight: normal; }
+    td input { width: 70px; }
+
+    /* 저장 버튼 줄은 아래에 고정해서 스크롤해도 보이게 */
+    #actions {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      background: #fff;
+      border-top: 1px solid #ddd;
+      padding: 10px 16px;
+      text-align: center;
+    }
+    #saveMsg { display: inline-block; margin-left: 10px; font-size: 13px; }
+    #saveMsg.ok   { color: #182; }
+    #saveMsg.fail { color: #c23; text-align: left; }
+    #saveMsg ul { margin: 4px 0; padding-left: 18px; }
+  </style>
+</head>
+<body>
+
+  <h1>확률 기반 사이트 차단 — 설정</h1>
+
+  <!-- ── 프리셋 ─────────────────────────────────────────── -->
+  <section>
+    <h2>빠른 설정</h2>
+    <button data-preset="loose">느슨</button>
+    <button data-preset="normal">보통</button>
+    <button data-preset="strict">엄격</button>
+    <p class="hint">
+      누르면 아래 값들이 한 번에 채워집니다.
+      아직 저장된 건 아니니 맨 아래 [저장]을 눌러야 적용됩니다.
+    </p>
+  </section>
+
+  <!-- ── 하루 이용 한도 ─────────────────────────────────── -->
+  <section>
+    <h2>하루 이용 한도</h2>
+    <div class="row">
+      <label>하루에 쓸 시간</label>
+      <input type="range" data-setting="dailyLimit">
+      <span class="value"><span data-display="dailyLimit"></span>분</span>
+    </div>
+    <p class="hint" id="dailyLimitHint"></p>
+  </section>
+
+  <!-- ── 확률 곡선 ──────────────────────────────────────── -->
+  <section>
+    <h2>확률 곡선</h2>
+    <p class="hint">기다린 시간이 길어질수록 확률이 어떻게 오를지 정합니다.</p>
+
+    <label><input type="radio" name="curve" value="scurve"> S자 — 초반 느리고 중간에 급함</label><br>
+    <label><input type="radio" name="curve" value="log"> 로그 — 초반에 확 오르고 완만해짐</label><br>
+    <label><input type="radio" name="curve" value="linear"> 직선 — 일정한 속도로 오름</label><br>
+    <label><input type="radio" name="curve" value="points"> 점 잇기 — 직접 찍은 점을 이음</label>
+
+    <!-- S자 곡선 -->
+    <div data-curve-group="scurve">
+      <div class="row">
+        <label>중간 지점</label>
+        <input type="range" data-setting="midpoint">
+        <span class="value"><span data-display="midpoint"></span>분</span>
+      </div>
+      <div class="row">
+        <label>기울기</label>
+        <input type="range" data-setting="steepness">
+        <span class="value" data-display="steepness"></span>
+      </div>
+      <p class="hint">중간 지점에서 확률이 대략 절반이 됩니다. 기울기가 클수록 계단처럼 급해집니다.</p>
+    </div>
+
+    <!-- 로그 곡선 -->
+    <div data-curve-group="log">
+      <div class="row">
+        <label>기준 시점</label>
+        <input type="range" data-setting="anchorMinutes">
+        <span class="value"><span data-display="anchorMinutes"></span>분</span>
+      </div>
+      <div class="row">
+        <label>기준 확률</label>
+        <input type="range" data-setting="anchorProb">
+        <span class="value"><span data-display="anchorProb"></span>%</span>
+      </div>
+      <div class="row">
+        <label>초반 완만함</label>
+        <input type="range" data-setting="smoothness">
+        <span class="value" data-display="smoothness"></span>
+      </div>
+      <p class="hint">"기준 시점에 기준 확률이 되도록" 곡선 높이를 자동으로 맞춥니다.</p>
+    </div>
+
+    <!-- 직선 -->
+    <div data-curve-group="linear">
+      <div class="row">
+        <label>상한 도달 시점</label>
+        <input type="range" data-setting="linearFullMin">
+        <span class="value"><span data-display="linearFullMin"></span>분</span>
+      </div>
+      <p class="hint">이 시점에 아래 '확률 상한'에 딱 도달합니다.</p>
+    </div>
+
+    <!-- 점 잇기 -->
+    <div data-curve-group="points">
+      <table>
+        <thead>
+          <tr><th></th><th>경과(분)</th><th>확률(%)</th></tr>
+        </thead>
+        <tbody id="pointRows"></tbody>
+      </table>
+      <p class="hint">
+        찍은 점 사이를 매끄럽게 이어 곡선을 만듭니다.
+        확률이 내려가지 않도록 계산하므로, 확률은 올라가게만 찍는 것이 좋습니다.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── 공통 ───────────────────────────────────────────── -->
+  <section>
+    <h2>공통</h2>
+
+    <div class="row">
+      <label>확률 상한</label>
+      <input type="range" data-setting="maxProb">
+      <span class="value"><span data-display="maxProb"></span>%</span>
+    </div>
+    <p class="hint">아무리 오래 기다려도 이 확률을 넘지 않습니다.</p>
+
+    <div class="row">
+      <label>사용량 보정</label>
+      <input type="range" data-setting="usagePenalty">
+      <span class="value" data-display="usagePenalty"></span>
+    </div>
+    <p class="hint">
+      오늘 많이 썼을수록 확률을 깎는 정도입니다.
+      0이면 오늘 쓴 시간이 확률에 전혀 영향을 주지 않습니다. (현재 방침)
+    </p>
+
+    <div class="row">
+      <label>거부 후 대기</label>
+      <input type="range" data-setting="cooldownSec">
+      <span class="value"><span data-display="cooldownSec"></span>초</span>
+    </div>
+    <p class="hint">거부당한 뒤 다시 시도할 수 있을 때까지의 시간입니다.</p>
+
+    <div class="row">
+      <label>이용 시간 선택지</label>
+      <input type="text" id="durationOptions" placeholder="10,15,20,30">
+      <span class="value">분</span>
+    </div>
+    <p class="hint">
+      통과했을 때 고를 수 있는 시간입니다. 쉼표로 구분해 적으세요.
+      하루 한도보다 큰 값은 화면에 나타나지 않습니다.
+    </p>
+  </section>
+
+  <!-- ── 저장 ───────────────────────────────────────────── -->
+  <div id="actions">
+    <button id="saveBtn">저장</button>
+    <button id="resetBtn">기본값으로</button>
+    <span id="saveMsg"></span>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
