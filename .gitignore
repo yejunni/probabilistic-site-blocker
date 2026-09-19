@@ -144,3 +144,10 @@ vite.config.ts.timestamp-*
 
 # 크롬이 확장을 로드할 때 자동 생성하는 폴더 (우리가 만든 게 아님)
 _metadata/
+
+# Supabase 키가 들어 있는 파일. 절대 커밋하지 말 것.
+# 틀은 secrets.example.js 를 참고.
+secrets.js
+
+# 편집기 개인 설정
+.vscode/

@@ -179,9 +179,23 @@ function updateMinutesHint() {
   if (!usable) {
     hint.textContent = `1 ~ ${maxMinutes}분 사이로 정해주세요`;
   } else if (value === maxMinutes) {
-    hint.textContent = '남은 한도를 전부 씁니다';
+    hint.textContent = `남은 한도 ${maxMinutes}분을 전부 씁니다`;
   } else {
     hint.textContent = `남은 한도 ${maxMinutes}분 중 ${value}분`;
+  }
+
+  // 더 올리거나 내릴 수 없는 버튼은 아예 잠근다.
+  //
+  // 이게 없으면 한도에 닿았을 때 [+5]를 눌러도 숫자가 그대로라서
+  // 버튼이 고장 난 것처럼 보인다. 잠가두면 "더 못 올린다"는 게 눈에 보인다.
+  for (const button of document.querySelectorAll('#stepper [data-step]')) {
+    if (!usable) {
+      button.disabled = false;   // 값이 이상할 땐 버튼으로 고칠 수 있어야 한다
+      continue;
+    }
+    const delta = Number(button.dataset.step);
+    const next = Math.min(Math.max(value + delta, 1), maxMinutes);
+    button.disabled = (next === value);
   }
 }
 

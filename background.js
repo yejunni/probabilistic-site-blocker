@@ -7,6 +7,18 @@
 
 importScripts('config.js', 'probability.js');
 
+// Supabase 키. secrets.js는 .gitignore에 있어서 저장소에 없을 수 있다.
+// 없다고 확장이 죽으면 안 되므로 따로 감싸서 불러온다.
+// (secrets.js가 없으면 기록 저장만 조용히 꺼지고 나머지는 그대로 돈다)
+try {
+  importScripts('secrets.js');
+} catch (e) {
+  console.warn('[기록] secrets.js가 없습니다. 기록 저장을 건너뜁니다.',
+               'secrets.example.js를 복사해 secrets.js를 만드세요.');
+}
+
+importScripts('supabase.js');
+
 
 // 이용 중일 때만 켜지는 "통과시켜라" 규칙의 번호.
 // rules.json의 차단 규칙(id 1)보다 priority가 높아서 이게 이긴다.
@@ -65,6 +77,21 @@ async function loadState() {
   }
 
   return state;
+}
+
+
+// 이 확장을 구분하는 id. 기록을 보낼 때 "누가 보낸 것인지" 표시하는 데 쓴다.
+// 로그인이 없으므로 처음 한 번 임의로 만들어 저장해두고 계속 쓴다.
+//
+// sync에 저장하므로 같은 구글 계정의 다른 프로필에서도 같은 id가 된다.
+// 즉 기기가 아니라 '사람' 단위에 가깝다.
+async function getClientId() {
+  const saved = await STORE.get('clientId');
+  if (saved.clientId) return saved.clientId;
+
+  const id = crypto.randomUUID();
+  await STORE.set({ clientId: id });
+  return id;
 }
 
 
@@ -353,6 +380,23 @@ async function attempt() {
     });
   }
 
+  // 기록을 남긴다.
+  //
+  // 일부러 await로 기다린다. 기다리지 않고 넘어가면 답장을 보낸 뒤
+  // 서비스 워커가 잠들면서 전송이 중간에 끊길 수 있기 때문이다.
+  // 대신 supabase.js에 3초 제한을 걸어둬서 오래 붙잡히지는 않는다.
+  // 실패해도 판정 결과에는 아무 영향이 없다.
+  const settings = await loadSettings();
+  await logAttempt({
+    client_id: await getClientId(),
+    passed: passed,
+    prob: status.prob,
+    roll: roll,
+    elapsed_min: status.elapsedMin,
+    used_today_min: status.usedTodayMin,
+    curve: settings.curve
+  });
+
   return { passed, roll, prob: status.prob, status: await buildStatus() };
 }
 
@@ -390,6 +434,12 @@ async function startSession(minutes) {
 
   // setTimeout 대신 alarms를 쓴다. 확장이 잠들어도 시간이 되면 깨워준다.
   chrome.alarms.create(SESSION_ALARM, { when: endAt });
+
+  // 실제로 몇 분을 썼는지 기록한다. 실패해도 이용에는 영향이 없다.
+  await logSession({
+    client_id: await getClientId(),
+    minutes: wanted
+  });
 
   return { ok: true, endAt };
 }
