@@ -63,6 +63,30 @@
     #previewTable th { color: #666; }
     #previewTable td { font-variant-numeric: tabular-nums; }
 
+    /* 통계 */
+    #statsCards { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+    .stat-card {
+      flex: 1 1 150px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 10px 12px;
+    }
+    .stat-card .title { font-size: 12px; color: #666; }
+    .stat-card .big { font-size: 22px; font-weight: bold; font-variant-numeric: tabular-nums; }
+    .stat-card .sub { font-size: 12px; color: #666; }
+
+    #statsDaily { width: 100%; font-size: 13px; }
+    #statsDaily th { color: #666; font-size: 12px; }
+    #statsDaily td { font-variant-numeric: tabular-nums; }
+    /* 막대그래프 한 칸. 글자 대신 길이로 보여준다 */
+    .bar {
+      display: inline-block;
+      height: 10px;
+      background: #1a73e8;
+      border-radius: 2px;
+      min-width: 1px;
+    }
+
     /* 저장 버튼 줄은 아래에 고정해서 스크롤해도 보이게 */
     #actions {
       position: fixed;
@@ -234,6 +258,56 @@
       통과했을 때 몇 분 쓸지는 차단 화면에서 +/- 버튼으로 직접 정합니다.
       1분부터 그날 남은 한도까지 고를 수 있습니다.
     </p>
+  </section>
+
+  <!-- ── 공유 코드 ──────────────────────────────────────── -->
+  <section>
+    <h2>공유 코드</h2>
+
+    <div class="row">
+      <label>코드</label>
+      <input type="text" id="shareCode" placeholder="비워두면 이 기기만">
+      <span class="value"></span>
+    </div>
+
+    <p class="hint">
+      크롬 프로필이나 구글 계정을 바꾸면 기록이 따로 쌓입니다.
+      여러 곳에 <strong>같은 코드</strong>를 넣으면 한 사람으로 묶입니다.
+    </p>
+    <p class="hint">
+      영문·숫자·<code>_</code>·<code>-</code> 만, 4자 이상.
+      예: <code>yejun-2026</code>
+    </p>
+    <p class="hint warn">
+      비밀번호가 아닙니다. 남이 같은 코드를 넣으면 같은 묶음이 되니
+      추측하기 어려운 값으로 정하세요.
+    </p>
+  </section>
+
+  <!-- ── 기록 통계 ──────────────────────────────────────── -->
+  <section>
+    <h2>기록 통계</h2>
+    <p class="hint" id="statsWho"></p>
+
+    <div id="statsCards"></div>
+
+    <h3 style="font-size: 13px; margin: 16px 0 4px;">최근 7일</h3>
+    <table id="statsDaily">
+      <thead>
+        <tr>
+          <th>날짜</th>
+          <th>시도</th>
+          <th>통과</th>
+          <th>통과율</th>
+          <th>사용</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <p class="hint" id="statsMsg"></p>
+    <button id="statsRefreshBtn">새로고침</button>
   </section>
 
   <!-- ── 저장 ───────────────────────────────────────────── -->

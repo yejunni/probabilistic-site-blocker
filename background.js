@@ -51,7 +51,8 @@ const DEFAULT_STATE = {
   todayKey: '',           // '2026-09-07' 같은 날짜. 날이 바뀌면 사용량을 초기화하려고 둔다
   usedTodayMin: 0,        // 오늘 이미 쓴 시간(분)
   sessionEndAt: null,     // 이용 중이면 끝나는 시각(ms), 아니면 null
-  cooldownUntil: null     // 거부당했을 때 언제까지 못 누르는지(ms)
+  cooldownUntil: null,    // 지금은 쓰지 않음 (거부 후 대기를 없앴다)
+  lastSyncAt: null        // 공유 서버와 마지막으로 맞춘 시각(ms). 화면에 표시용
 };
 
 
@@ -92,6 +93,80 @@ async function getClientId() {
   const id = crypto.randomUUID();
   await STORE.set({ clientId: id });
   return id;
+}
+
+
+// 기록에 붙일 이름표를 고른다.
+//
+// 공유 코드를 넣어뒀으면 그것을, 아니면 기기별 clientId를 쓴다.
+// 코드를 쓰면 프로필이나 구글 계정이 달라도 기록이 한 사람으로 묶인다.
+//
+// ★ Supabase에 보내는 모든 기록은 이 함수를 거친다.
+//   여기 한 곳만 고치면 "무엇을 한 사람으로 볼지"가 전부 따라 바뀐다.
+async function getRecordId() {
+  const settings = await loadSettings();
+  const code = (settings.shareCode || '').trim();
+
+  return code !== '' ? code : await getClientId();
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// 한도 공유
+//
+// 공유 코드를 넣었을 때만 켜진다. 비어 있으면 지금까지처럼 완전히 로컬이다.
+//
+// chrome.storage를 '작업용 사본'으로 계속 쓰고, Supabase와는
+// 중요한 순간에만 맞춘다. 차단 화면이 1초마다 하는 갱신은 사본만 본다.
+// ─────────────────────────────────────────────────────────────
+
+// 공유가 켜져 있으면 공유 코드를, 아니면 null을 돌려준다.
+async function getShareCode() {
+  const settings = await loadSettings();
+  const code = (settings.shareCode || '').trim();
+  return code !== '' ? code : null;
+}
+
+
+// 서버의 값을 받아와 로컬 사본에 덮어쓴다.
+// 차단 화면이 열릴 때 한 번만 부른다.
+//
+// 서버 값을 그대로 믿는 이유: 차감은 항상 서버를 거쳐서 하므로
+// 로컬이 서버보다 앞서 있을 일이 없다. 서버가 언제나 진실이다.
+async function pullShared() {
+  const code = await getShareCode();
+  if (!code) return { sharing: false };
+
+  const result = await pullSharedState(code, getTodayKey());
+  if (!result.ok) {
+    // 못 받아왔으면 로컬 사본으로 계속 간다. 앱이 멈추면 안 된다.
+    return { sharing: true, ok: false };
+  }
+
+  await saveState({
+    usedTodayMin: Number(result.data.used_today_min) || 0,
+    waitStartAt: result.data.wait_start_at === null
+      ? null
+      : Number(result.data.wait_start_at),
+    todayKey: getTodayKey(),
+    lastSyncAt: Date.now()
+  });
+
+  return { sharing: true, ok: true };
+}
+
+
+// 기준 시각을 서버에도 알린다. 거부당했을 때와 이용이 끝났을 때.
+//
+// 이걸 빼먹으면 프로필을 바꿔서 거부를 없던 일로 만들 수 있다.
+async function pushWaitStart(waitStartAt) {
+  const code = await getShareCode();
+  if (!code) return;
+
+  const result = await pushSharedWaitStart(code, getTodayKey(), waitStartAt);
+  if (result.ok) {
+    await saveState({ lastSyncAt: Date.now() });
+  }
 }
 
 
@@ -141,6 +216,9 @@ const SETTING_RULES = {
 
   // points 전용
   points:        { label: '곡선 점',       type: 'points' },
+
+  // 여러 프로필·계정을 한 사람으로 묶는 코드. 비워두면 기기별 id를 쓴다
+  shareCode:     { label: '공유 코드',     type: 'code', maxLength: 40 },
 
   // 공통
   maxProb:       { label: '확률 상한',     type: 'number', min: 50,   max: 100, step: 1 },
@@ -215,6 +293,30 @@ function validateSettings(input) {
         errors.push(`${rule.label}: ${rule.min}~${rule.max} 범위를 벗어났습니다 (받은 값 ${num})`);
       } else {
         settings[key] = num;
+      }
+
+    // ── 공유 코드 (글자) ──
+    } else if (rule.type === 'code') {
+      const text = String(value == null ? '' : value).trim();
+
+      // 비워두는 건 허용한다. "공유 안 함"이라는 뜻.
+      if (text === '') {
+        settings[key] = '';
+
+      // 영문/숫자/밑줄/붙임표만 받는다.
+      // 이 값이 나중에 DB 조회 조건과 주소에 들어가므로, 공백이나 특수문자가
+      // 섞이면 엉뚱한 곳에서 깨진다. 처음부터 좁혀두는 편이 안전하다.
+      } else if (!/^[A-Za-z0-9_-]+$/.test(text)) {
+        errors.push(`${rule.label}: 영문, 숫자, _, - 만 쓸 수 있습니다`);
+
+      } else if (text.length < 4) {
+        errors.push(`${rule.label}: 4자 이상이어야 합니다 (너무 짧으면 남과 겹칩니다)`);
+
+      } else if (text.length > rule.maxLength) {
+        errors.push(`${rule.label}: ${rule.maxLength}자를 넘을 수 없습니다`);
+
+      } else {
+        settings[key] = text;
       }
 
     // ── 곡선 점 목록 ──
@@ -338,6 +440,11 @@ async function buildStatus() {
     cooldownLeftSec,
     dailyLimit: settings.dailyLimit,
 
+    // 차단 화면에 '마지막 동기화'를 띄우기 위한 값.
+    // 공유가 꺼져 있으면 표시하지 않는다.
+    sharing: (settings.shareCode || '').trim() !== '',
+    lastSyncAt: state.lastSyncAt || null,
+
     // 실제 통과 확률 (probability.js가 계산).
     // 세 번째 인자로 설정을 넘겨야 사용자가 바꾼 곡선이 반영된다.
     prob: calcProb(elapsedMin, state.usedTodayMin, settings),
@@ -354,6 +461,16 @@ async function buildStatus() {
 
 // [시도] 버튼을 눌렀을 때. 난수를 뽑아 통과/거부를 정한다.
 async function attempt() {
+  // 판정 직전에 서버 값을 한 번 더 확인한다.
+  //
+  // 차단 화면은 열릴 때 딱 한 번만 서버를 읽는다. 화면을 계속 열어둔 채
+  // 다른 기기가 거부당하거나 세션을 끝내면, 이 화면의 사본은 낡은 채로 남는다.
+  // 화면 숫자가 잠깐 틀리는 건 넘어갈 수 있지만, 그 낡은 값으로 실제 주사위를
+  // 굴려버리면 공정성 문제가 된다. 그래서 굴리기 직전에 한 번 더 맞춘다.
+  //
+  // 공유가 꺼져 있으면 pullShared()가 바로 { sharing:false }를 돌려주고 끝난다.
+  await pullShared();
+
   const status = await buildStatus();
 
   // 한도가 없거나 쿨타임 중이면 판정 자체를 하지 않는다
@@ -374,10 +491,12 @@ async function attempt() {
     // 모든 곡선은 0분에서 정확히 0%다. 그래서 연타해도 "난수 < 0"이
     // 참이 되지 않아 어차피 계속 실패한다. 대기가 하는 일이 없었다.
     // (cooldownUntil을 null로 지우는 건 예전에 저장된 값을 치우려는 것)
-    await saveState({
-      waitStartAt: Date.now(),
-      cooldownUntil: null
-    });
+    const now = Date.now();
+    await saveState({ waitStartAt: now, cooldownUntil: null });
+
+    // 거부당한 사실을 서버에도 알린다.
+    // 안 보내면 프로필을 바꿔서 거부를 없던 일로 만들 수 있다.
+    await pushWaitStart(now);
   }
 
   // 기록을 남긴다.
@@ -388,7 +507,7 @@ async function attempt() {
   // 실패해도 판정 결과에는 아무 영향이 없다.
   const settings = await loadSettings();
   await logAttempt({
-    client_id: await getClientId(),
+    client_id: await getRecordId(),
     passed: passed,
     prob: status.prob,
     roll: roll,
@@ -419,6 +538,41 @@ async function startSession(minutes) {
     return { ok: false, error: `남은 한도(${remainingMin}분)를 넘을 수 없습니다` };
   }
 
+  // 공유가 켜져 있으면 서버에서 차감한다.
+  //
+  // 여기서 차감해야 하는 이유: 기기 A와 B가 거의 같이 시작하면 둘 다
+  // 같은 사용량을 읽고 각자 더해 써서 한 쪽 차감이 사라진다.
+  // DB 함수 안에서 잠그고 처리하면 그럴 틈이 없다.
+  const code = await getShareCode();
+  let newUsedMin = state.usedTodayMin + wanted;
+
+  if (code) {
+    const result = await consumeSharedMinutes(
+      code, getTodayKey(), wanted, settings.dailyLimit
+    );
+
+    if (result.ok && result.data.ok === false) {
+      // 서버가 거절했다 = 다른 기기가 이미 한도를 써버렸다.
+      // 받아온 값으로 사본을 맞춰두면 화면이 바로 정확해진다.
+      await saveState({
+        usedTodayMin: Number(result.data.used_today_min) || 0,
+        lastSyncAt: Date.now()
+      });
+      return {
+        ok: false,
+        error: '다른 기기에서 한도를 이미 사용했습니다. 남은 시간을 다시 확인하세요'
+      };
+    }
+
+    if (result.ok) {
+      // 서버가 계산한 값을 쓴다. 서버가 진실이다.
+      newUsedMin = Number(result.data.used_today_min) || newUsedMin;
+      await saveState({ lastSyncAt: Date.now() });
+    }
+    // result.ok가 false면(인터넷 끊김 등) 로컬 계산으로 그냥 진행한다.
+    // 인터넷 문제로 유튜브를 아예 못 쓰게 되는 게 더 나쁜 결과라서.
+  }
+
   const now = Date.now();
   const endAt = now + wanted * 60000;
 
@@ -428,7 +582,7 @@ async function startSession(minutes) {
     sessionEndAt: endAt,
     // 사용량은 '끝날 때'가 아니라 '시작할 때' 미리 차감한다.
     // 도중에 브라우저를 꺼버려도 기록이 남게 하려는 것.
-    usedTodayMin: state.usedTodayMin + wanted,
+    usedTodayMin: newUsedMin,
     cooldownUntil: null
   });
 
@@ -437,7 +591,7 @@ async function startSession(minutes) {
 
   // 실제로 몇 분을 썼는지 기록한다. 실패해도 이용에는 영향이 없다.
   await logSession({
-    client_id: await getClientId(),
+    client_id: await getRecordId(),
     minutes: wanted
   });
 
@@ -450,12 +604,16 @@ async function endSession() {
   await setAllowRule(false);
   await chrome.alarms.clear(SESSION_ALARM);
 
+  const now = Date.now();
   await saveState({
     sessionEndAt: null,
     // 여기가 핵심. 이용이 끝난 이 시각부터 다시 확률이 0%에서 자란다.
-    waitStartAt: Date.now(),
+    waitStartAt: now,
     cooldownUntil: null
   });
+
+  // 다른 기기의 기준 시각도 같이 맞춘다
+  await pushWaitStart(now);
 
   await reloadYoutubeTabs();
 }
@@ -468,15 +626,27 @@ async function endSession() {
 // 80분 확률을 보려고 진짜 80분을 기다릴 수는 없으니,
 // 기준 시각을 과거로 옮겨서 "이미 N분 기다린 것"으로 만든다.
 async function devSetElapsed(minutes) {
-  await saveState({
-    waitStartAt: Date.now() - minutes * 60000,
-    cooldownUntil: null
-  });
+  const waitStartAt = Date.now() - minutes * 60000;
+  await saveState({ waitStartAt, cooldownUntil: null });
+
+  // 공유가 켜져 있으면 서버도 같이 맞춘다.
+  // 안 하면 몇 초 뒤 재동기화 때 서버의 진짜 값으로 되돌아가서
+  // 테스트로 바꾼 게 없던 일이 된다. (pushWaitStart는 공유가 꺼져 있으면
+  // 알아서 아무 일도 안 한다)
+  await pushWaitStart(waitStartAt);
 }
 
 // 오늘 사용량을 원하는 값으로 바꾼다. 사용량 보정이 걸리는지 확인용.
 async function devSetUsed(minutes) {
   await saveState({ usedTodayMin: minutes });
+
+  // 공유가 켜져 있으면 서버 값도 같이 지정한다. consume_minutes는
+  // '더하기'만 할 수 있어서 테스트용으로 값을 통째로 지정하는
+  // 별도 함수(dev_set_used_minutes)를 하나 더 뒀다.
+  const code = await getShareCode();
+  if (code) {
+    await devSetSharedUsed(code, getTodayKey(), minutes);
+  }
 }
 
 
@@ -502,6 +672,13 @@ async function handleMessage(message) {
     case 'ATTEMPT':
       return await attempt();
 
+    // 차단 화면이 열릴 때 딱 한 번. 다른 기기가 쓴 시간을 받아온다.
+    // 1초마다 하는 갱신(GET_STATUS)은 여기를 거치지 않고 사본만 본다.
+    case 'SYNC_SHARED': {
+      const synced = await pullShared();
+      return { ...synced, status: await buildStatus() };
+    }
+
     // 유튜브 위에 뜨는 타이머(timer.js)가 "언제 끝나요?"라고 물어볼 때
     case 'GET_SESSION': {
       const state = await loadState();
@@ -521,6 +698,14 @@ async function handleMessage(message) {
     // 성공하면 { ok: true, settings }, 실패하면 { ok: false, errors: [...] }
     case 'SET_SETTINGS':
       return await saveSettings(message.settings);
+
+    // 옵션 화면의 통계 칸이 부른다.
+    // 어느 이름표로 묶어 볼지는 getRecordId()가 정한다 (공유 코드 우선).
+    case 'GET_STATS': {
+      const recordId = await getRecordId();
+      const result = await fetchStats(recordId, message.timeZone);
+      return { ...result, recordId };
+    }
 
     case 'START_SESSION':
       return await startSession(message.minutes);

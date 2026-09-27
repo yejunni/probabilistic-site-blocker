@@ -14,6 +14,29 @@ const durationsEl = document.getElementById('durations');
 // 이게 없으면 화면을 연 순간의 확률이 그대로 멈춰 있게 된다.
 let ticker = null;
 
+// background에 실제로 물어보는 주기(초). (로컬 사본만 보는 것, 네트워크 없음)
+// 화면은 1초마다 다시 그리지만, 물어보는 건 이만큼에 한 번만 한다.
+// 경과 시간은 아래에서 스스로 세므로 초 표시는 그대로 부드럽다.
+const ASK_EVERY_SEC = 5;
+
+// 공유 서버와 다시 맞추는 주기(초). (여기만 네트워크를 탄다)
+//
+// 차단 화면은 열릴 때 딱 한 번만 서버를 읽는다. 화면을 오래 열어둔 채
+// 다른 기기가 거부당하거나 세션을 끝내면, 이 화면은 그 사실을 모른 채
+// 낡은 값으로 계속 표시하게 된다. 그래서 이 주기로 가끔 다시 맞춘다.
+// (판정 자체는 attempt() 직전에 항상 다시 맞추므로, 이 값은 화면 표시가
+//  얼마나 빨리 따라잡는지에만 영향을 준다. 판정 정확성과는 무관하다)
+//
+// 진짜 실시간(웹소켓 구독)으로 만들 수도 있지만, 그러려면 shared_state
+// 표의 읽기를 열어야 해서 "코드를 아는 사람이 남의 표를 훔쳐볼 수 없게"
+// 막아둔 지금 구조를 다시 짜야 한다. 2초 간격이면 사람 눈에는 사실상
+// 즉각이면서 그 복잡함 없이 같은 체감을 준다.
+const RESYNC_EVERY_SEC = 2;
+
+let tickCount = 0;
+let lastStatus = null;    // 마지막으로 받아온 값
+let lastStatusAt = 0;     // 그걸 받아온 시각(ms)
+
 
 // background.js에게 말을 거는 함수.
 // 답장이 올 때까지 기다렸다가 결과를 돌려준다.
@@ -41,6 +64,8 @@ function render(status) {
     ` · 오늘 ${status.usedTodayMin}분 사용` +
     ` · ${status.remainingMin}분 남음`;
 
+  renderSyncInfo(status);
+
   if (status.remainingMin <= 0) {
     // 한도를 다 썼으면 판정 자체를 안 한다
     attemptBtn.disabled = true;
@@ -58,18 +83,66 @@ function render(status) {
 }
 
 
+// 공유가 켜져 있으면 마지막으로 서버와 맞춘 시각을 작게 보여준다.
+//
+// 와이파이를 꺼서 한도를 되돌리는 건 여전히 막을 수 없다.
+// 다만 '몇 시간 전'이 눈에 보이면 스스로 알아차리게 된다.
+function renderSyncInfo(status) {
+  const box = document.getElementById('syncInfo');
+
+  if (!status.sharing) {
+    box.textContent = '';
+    return;
+  }
+
+  if (!status.lastSyncAt) {
+    box.textContent = '아직 다른 기기와 맞추지 못했습니다';
+    return;
+  }
+
+  const agoMin = Math.floor((Date.now() - status.lastSyncAt) / 60000);
+
+  if (agoMin < 1)       box.textContent = '방금 다른 기기와 맞춤';
+  else if (agoMin < 60) box.textContent = `마지막 동기화: ${agoMin}분 전`;
+  else                  box.textContent = `마지막 동기화: ${Math.floor(agoMin / 60)}시간 전`;
+}
+
+
 // background.js에서 최신 상태를 받아와 화면을 새로 그린다
 async function refresh() {
   const status = await ask({ type: 'GET_STATUS' });
+  lastStatus = status;
+  lastStatusAt = Date.now();
   render(status);
 }
 
 
-// 1초마다 refresh를 돌려서 확률과 시간이 실제로 흘러가게 만든다.
-// 계산은 전부 background.js가 하므로 여기서는 물어보기만 한다.
+// 마지막으로 받아온 값에 '그 뒤로 흐른 시간'을 더한다.
+//
+// 이러면 5초에 한 번만 물어봐도 초 표시가 1초마다 부드럽게 움직인다.
+// 확률은 마지막에 받아온 값 그대로인데, 초반 상승이 분당 0.2% 수준이라
+// 5초면 0.02%도 안 되는 차이라서 눈에 보이지 않는다.
+function withElapsedSinceFetch(status) {
+  const passedMin = (Date.now() - lastStatusAt) / 60000;
+  return { ...status, elapsedMin: status.elapsedMin + passedMin };
+}
+
+
+// 1초마다 화면을 다시 그리되, background에는 ASK_EVERY_SEC마다 한 번만 묻는다.
 function startTicking() {
   if (ticker) return;
-  ticker = setInterval(refresh, 1000);
+
+  ticker = setInterval(() => {
+    tickCount++;
+
+    if (tickCount % RESYNC_EVERY_SEC === 0) {
+      syncAndRefresh();
+    } else if (tickCount % ASK_EVERY_SEC === 0 || !lastStatus) {
+      refresh();
+    } else {
+      render(withElapsedSinceFetch(lastStatus));
+    }
+  }, 1000);
 }
 
 function stopTicking() {
@@ -256,6 +329,27 @@ if (CONFIG.devMode) {
 }
 
 
-// 화면이 열리면 한 번 그린 뒤, 1초마다 계속 갱신한다
-refresh();
-startTicking();
+// 서버와 맞추고 화면을 다시 그린다.
+// 화면이 열릴 때, 그리고 RESYNC_EVERY_SEC마다 이걸 부른다.
+// 공유 코드가 비어 있으면 background가 알아서 건너뛴다.
+async function syncAndRefresh() {
+  try {
+    const synced = await ask({ type: 'SYNC_SHARED' });
+    if (synced && synced.status) {
+      lastStatus = synced.status;
+      lastStatusAt = Date.now();
+      render(synced.status);
+    }
+  } catch (e) {
+    // 못 맞췄어도 그냥 진행한다. 로컬 사본으로 계속 돌아간다.
+    console.warn('[차단화면] 동기화 실패:', e.message);
+  }
+}
+
+
+async function start() {
+  await syncAndRefresh();
+  startTicking();
+}
+
+start();

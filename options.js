@@ -113,6 +113,9 @@ function fillForm(settings) {
     radio.checked = (radio.value === settings.curve);
   }
 
+  // 공유 코드
+  document.getElementById('shareCode').value = settings.shareCode || '';
+
   // 점 목록. 원본을 그대로 두면 끌 때 저장된 설정까지 바뀌므로 복사해서 쓴다.
   currentPoints = settings.points.map(p => ({ x: Number(p.x), y: Number(p.y) }));
 
@@ -204,6 +207,9 @@ function collectForm() {
   for (const input of document.querySelectorAll('input[type="range"][data-setting]')) {
     settings[input.dataset.setting] = Number(input.value);
   }
+
+  // 공유 코드. 앞뒤 공백은 여기서 털어낸다 (복사·붙여넣기로 딸려오기 쉽다)
+  settings.shareCode = document.getElementById('shareCode').value.trim();
 
   // 점 목록도 복사해서 넘긴다. 받은 쪽에서 고쳐도 여기 원본은 안 바뀌게.
   settings.points = currentPoints.map(p => ({ x: p.x, y: p.y }));
@@ -499,6 +505,127 @@ function hookPreviewDrag() {
 
 
 // ─────────────────────────────────────────────────────────────
+// 기록 통계
+//
+// 여기서도 Supabase를 직접 부르지 않는다. background에 물어본다.
+// 키를 다루는 곳을 한 군데로 모아두려는 것이다.
+// ─────────────────────────────────────────────────────────────
+
+async function loadStats() {
+  const msg = document.getElementById('statsMsg');
+  msg.className = 'hint';
+  msg.textContent = '불러오는 중...';
+
+  // 브라우저가 쓰는 시간대를 그대로 넘긴다.
+  // 서버는 UTC로 돌기 때문에 이게 없으면 밤 9시 이후 기록이 '내일'로 잡힌다.
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const result = await ask({ type: 'GET_STATS', timeZone: timeZone });
+
+  if (result.skipped) {
+    msg.className = 'hint warn';
+    msg.textContent = 'Supabase가 설정되지 않았습니다. secrets.js를 확인하세요.';
+    return;
+  }
+  if (!result.ok) {
+    msg.className = 'hint warn';
+    msg.textContent = '불러오지 못했습니다: ' + (result.detail || result.error || '알 수 없는 오류');
+    return;
+  }
+
+  document.getElementById('statsWho').textContent =
+    `이름표: ${result.recordId}  (공유 코드를 넣으면 여러 기기 기록이 합쳐집니다)`;
+
+  renderStats(result.data);
+
+  msg.className = 'hint';
+  msg.textContent = '';
+}
+
+
+function renderStats(data) {
+  const cards = document.getElementById('statsCards');
+  cards.innerHTML = '';
+
+  addStatCard(cards, '오늘', data.today);
+  addStatCard(cards, '최근 7일', data.week);
+  addStatCard(cards, '전체', data.total);
+
+  renderDailyTable(data.daily || []);
+}
+
+
+// 카드 한 장: 시도 횟수를 크게, 통과율과 사용 시간을 작게
+function addStatCard(parent, title, stat) {
+  const passRate = stat.attempts > 0
+    ? Math.round((stat.passed / stat.attempts) * 100)
+    : 0;
+
+  const box = document.createElement('div');
+  box.className = 'stat-card';
+
+  const t = document.createElement('div');
+  t.className = 'title';
+  t.textContent = title;
+
+  const big = document.createElement('div');
+  big.className = 'big';
+  big.textContent = `${stat.attempts}회 시도`;
+
+  const sub = document.createElement('div');
+  sub.className = 'sub';
+  sub.textContent = `통과 ${stat.passed}회 (${passRate}%) · ${formatMinutes(stat.minutes)}`;
+
+  box.append(t, big, sub);
+  parent.appendChild(box);
+}
+
+
+// 90 -> "1시간 30분", 45 -> "45분"
+function formatMinutes(total) {
+  const minutes = Number(total) || 0;
+  if (minutes < 60) return `${minutes}분`;
+
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m === 0 ? `${h}시간` : `${h}시간 ${m}분`;
+}
+
+
+function renderDailyTable(daily) {
+  const tbody = document.querySelector('#statsDaily tbody');
+  tbody.innerHTML = '';
+
+  // 막대 길이를 정하려면 최대값이 필요하다. 0이면 1로 둬서 0으로 나누는 걸 막는다
+  const maxMinutes = Math.max(1, ...daily.map(d => Number(d.minutes) || 0));
+
+  for (const day of daily) {
+    const attempts = Number(day.attempts) || 0;
+    const passed = Number(day.passed) || 0;
+    const minutes = Number(day.minutes) || 0;
+    const rate = attempts > 0 ? Math.round((passed / attempts) * 100) + '%' : '-';
+
+    const tr = document.createElement('tr');
+
+    for (const text of [day.day, attempts + '회', passed + '회', rate, formatMinutes(minutes)]) {
+      const td = document.createElement('td');
+      td.textContent = text;
+      tr.appendChild(td);
+    }
+
+    // 사용 시간을 막대 길이로도 보여준다. 숫자만 보면 흐름이 안 보인다
+    const barCell = document.createElement('td');
+    const bar = document.createElement('span');
+    bar.className = 'bar';
+    bar.style.width = Math.round((minutes / maxMinutes) * 100) + 'px';
+    barCell.appendChild(bar);
+    tr.appendChild(barCell);
+
+    tbody.appendChild(tr);
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────
 // 저장
 // ─────────────────────────────────────────────────────────────
 
@@ -513,6 +640,9 @@ async function save() {
     // background가 정리한 값(정렬·중복 제거 등)을 화면에 되비춘다.
     // 내가 적은 것과 실제 저장된 것이 다를 수 있기 때문이다.
     fillForm(result.settings);
+
+    // 공유 코드를 바꿨다면 이름표가 달라져 통계도 달라진다. 같이 새로 불러온다.
+    loadStats();
 
     setTimeout(() => { msg.textContent = ''; msg.className = ''; }, 2500);
 
@@ -568,6 +698,8 @@ function hookEvents() {
     fillForm(DEFAULTS);
   });
 
+  document.getElementById('statsRefreshBtn').addEventListener('click', loadStats);
+
   hookPreviewDrag();
 }
 
@@ -599,6 +731,10 @@ async function init() {
   applyRanges();           // 슬라이더 범위를 먼저 맞춰야
   fillForm(res.settings);  // 값을 넣었을 때 잘리지 않는다
   hookEvents();
+
+  // 통계는 네트워크를 타므로 화면을 다 그린 뒤에 따로 불러온다.
+  // 기다리지 않으므로 느려도 설정 조작에는 지장이 없다.
+  loadStats();
 }
 
 

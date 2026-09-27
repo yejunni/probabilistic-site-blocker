@@ -91,6 +91,118 @@ async function insertRow(table, row) {
 }
 
 
+// Supabase에 만들어둔 함수를 부른다.
+//
+// 표를 직접 읽는 게 아니라 함수를 부르는 이유는 supabase/stats.sql의 설명 참고.
+// 요약하면, 로그인이 없어서 "자기 것만 읽게" 하는 규칙을 세울 수 없기 때문에
+// 표는 막아두고 "이 코드의 요약만 달라"는 창구 하나만 열어둔 것이다.
+async function callFunction(name, args) {
+  if (!isSupabaseReady()) {
+    return { ok: false, skipped: true };
+  }
+
+  const stopper = new AbortController();
+  const timer = setTimeout(() => stopper.abort(), SUPABASE_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${getBaseUrl()}/rest/v1/rpc/${name}`, {
+      method: 'POST',
+      signal: stopper.signal,
+      headers: {
+        'apikey': SUPABASE.anonKey,
+        'Authorization': `Bearer ${SUPABASE.anonKey}`,
+        'Content-Type': 'application/json'
+        // 여기서는 결과를 받아야 하므로 return=minimal 을 쓰지 않는다
+      },
+      body: JSON.stringify(args)
+    });
+
+    if (!response.ok) {
+      const detail = await response.text();
+      console.warn(`[supabase] ${name} 실패 (${response.status})`, detail);
+      return { ok: false, status: response.status, detail };
+    }
+
+    return { ok: true, data: await response.json() };
+
+  } catch (error) {
+    const reason = (error.name === 'AbortError')
+      ? `${SUPABASE_TIMEOUT_MS}ms 안에 응답이 없었습니다`
+      : error.message;
+
+    console.warn(`[supabase] ${name} 부르지 못했습니다:`, reason);
+    return { ok: false, error: reason };
+
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+
+// 통계를 가져온다.
+// timeZone을 넘기는 이유: 서버는 UTC로 도는데 한국은 9시간 빠르다.
+// 안 맞추면 밤 9시 이후 기록이 '내일' 것으로 잡힌다.
+async function fetchStats(clientId, timeZone) {
+  return callFunction('get_stats', {
+    p_client_id: clientId,
+    p_tz: timeZone || 'Asia/Seoul'
+  });
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// 한도 공유
+//
+// 아래 셋은 공유 코드를 넣었을 때만 쓰인다.
+// 호출 지점은 딱 네 군데뿐이다 — 차단 화면 열 때(읽기),
+// 거부당했을 때, 유튜브 열 때, 시간이 끝났을 때(쓰기).
+// 차단 화면이 1초마다 하는 갱신은 여기를 거치지 않는다.
+// ─────────────────────────────────────────────────────────────
+
+// 공유된 사용량과 기준 시각을 읽어온다. 차단 화면이 열릴 때 한 번.
+async function pullSharedState(clientId, todayKey) {
+  return callFunction('sync_state', {
+    p_client_id: clientId,
+    p_today_key: todayKey
+  });
+}
+
+
+// 이용 시간을 차감한다. 읽고·더하고·쓰기를 DB가 한 번에 처리한다.
+// 한도를 넘으면 data.ok 가 false로 오고 아무것도 바뀌지 않는다.
+async function consumeSharedMinutes(clientId, todayKey, minutes, dailyLimit) {
+  return callFunction('consume_minutes', {
+    p_client_id: clientId,
+    p_today_key: todayKey,
+    p_minutes: minutes,
+    p_limit: dailyLimit
+  });
+}
+
+
+// 기준 시각을 알린다. 거부당했을 때와 이용이 끝났을 때.
+async function pushSharedWaitStart(clientId, todayKey, waitStartAt) {
+  return callFunction('set_wait_start', {
+    p_client_id: clientId,
+    p_today_key: todayKey,
+    p_wait_start_at: waitStartAt
+  });
+}
+
+
+// 테스트 전용. 오늘 사용량을 통째로 지정한다.
+// consume_minutes는 '더하기'만 하고 한도를 넘으면 거부하므로,
+// 테스트 칸에서 값을 통째로 바꿔치기하려면 이 함수가 따로 필요하다.
+// devMode가 꺼져 있으면 background.js가 이 요청 자체를 막는다.
+async function devSetSharedUsed(clientId, todayKey, minutes) {
+  return callFunction('dev_set_used_minutes', {
+    p_client_id: clientId,
+    p_today_key: todayKey,
+    p_used_today_min: minutes
+  });
+}
+
+
 // [시도하기]를 누를 때마다 한 줄. 통과/거부 모두 남긴다.
 async function logAttempt(row) {
   return insertRow('attempts', row);
