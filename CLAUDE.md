@@ -89,7 +89,10 @@ background.js가 난수(0~100)를 뽑아 확률과 비교
 | `supabase.js` | 기록을 Supabase로 보내는 부분. 보내기만 한다 |
 | `secrets.example.js` | Supabase 키를 넣는 틀. 저장소에 올라감 |
 | `secrets.js` | **실제 키. `.gitignore`에 있어 저장소에 없다** |
-| `supabase/schema.sql` | 테이블 + RLS 생성 SQL. SQL Editor에 붙여넣어 실행 |
+| `supabase/schema.sql` | 기록 테이블(attempts/sessions) + RLS. **1번째로 실행** |
+| `supabase/stats.sql` | 통계 함수 `get_stats`. **2번째로 실행** |
+| `supabase/shared_state.sql` | 한도 공유 표 + 함수 4개. **3번째로 실행** (재실행해도 안전) |
+| `README.md` | 처음 보는 사람용 소개·설치 방법. CLAUDE.md는 AI용 작업 메모 |
 
 ### 역할 분리 원칙
 - `probability.js` — **순수 계산만.** 저장·화면·난수 전부 금지.
@@ -205,7 +208,7 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 
 바꿀 수 있는 항목 (`SETTING_RULES`):
 `curve` `midpoint` `steepness` `anchorMinutes` `anchorProb` `smoothness`
-`linearFullMin` `points` `maxProb` `dailyLimit` `usagePenalty`
+`linearFullMin` `points` `shareCode` `maxProb` `dailyLimit` `usagePenalty`
 
 - **허용 범위는 `SETTING_RULES`에만 적는다.** `GET_SETTINGS`가 이 표를
   같이 보내주고 옵션 화면이 슬라이더 min/max를 거기서 가져간다.
@@ -236,7 +239,8 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 | `sessionEndAt` | 이용 중이면 끝나는 시각(ms), 아니면 null |
 | `cooldownUntil` | **지금은 쓰지 않음.** 대기 시간을 없애면서 항상 null |
 | `settings` | 사용자 설정 한 덩어리 |
-| `clientId` | Supabase 기록에 붙이는 임의의 id. 처음 한 번 만든다 |
+| `clientId` | Supabase 기록에 붙이는 임의의 id. 공유 코드가 없을 때 쓴다 |
+| `lastSyncAt` | 공유 서버와 마지막으로 맞춘 시각(ms). 차단 화면에 표시 |
 
 **사용량은 세션이 끝날 때가 아니라 시작할 때 미리 차감한다.**
 끝날 때 빼면 20분을 받고 5분 만에 브라우저를 꺼버렸을 때 기록이 안 남는다.
@@ -273,6 +277,51 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 전송은 **일부러 `await`로 기다린다.** 안 기다리면 답장을 보낸 뒤 서비스 워커가
 잠들면서 전송이 끊길 수 있다. 대신 **3초 제한**을 걸어 오래 붙잡히지 않게 했다.
 
+### 공유 코드 (이름표)
+설정의 `shareCode`. 넣으면 프로필·구글 계정이 달라도 한 사람으로 묶인다.
+- 영문·숫자·`_`·`-`, 4자 이상, 40자 이하. 비우면 기기별 `clientId`를 쓴다
+- **기록에 붙는 이름표는 `getRecordId()` 한 곳에서 정한다** (공유 코드 우선)
+- **비밀번호가 아니다.** 코드를 아는 사람은 그 묶음의 통계를 볼 수 있다
+
+### 기록 통계 (`get_stats`)
+설정 화면 맨 아래 카드 + 최근 7일 표.
+**표(`attempts`/`sessions`)의 읽기는 계속 막혀 있다.** 로그인이 없어서 DB가 요청자를
+구분할 수 없고, 읽기를 열면 키를 가진 누구나 전체를 훑을 수 있기 때문이다.
+대신 `security definer` 함수 `get_stats(코드, 시간대)`가 **숫자 요약만** 돌려준다.
+서버는 UTC라 브라우저 시간대를 넘겨야 밤 9시 이후 기록이 '내일'로 안 잡힌다.
+
+### 한도 공유 (`shared_state`)
+**공유 코드를 넣었을 때만 켜진다.** 비어 있으면 완전히 로컬로 돈다.
+`chrome.storage`가 '작업용 사본', 서버가 진실. 네트워크는 이 지점에서만 탄다:
+
+| 언제 | 방향 | 함수 |
+|---|---|---|
+| 차단 화면 열 때 + **2초마다** | 읽기 | `sync_state` |
+| **`시도하기` 직전** | 읽기 | `sync_state` |
+| 거부당했을 때 / 이용이 끝났을 때 | 쓰기 | `set_wait_start` |
+| 유튜브 열 때(시간 정할 때) | 쓰기 | `consume_minutes` |
+| (테스트 전용) 사용량 강제 지정 | 쓰기 | `dev_set_used_minutes` |
+
+- **차감은 DB 함수 안에서 한다.** 기기 A·B가 거의 동시에 시작하면 둘 다 같은 값을 읽고
+  각자 더해 써서 한 쪽 차감이 사라진다. 줄을 잠그고 처리하면 끼어들 틈이 없다.
+  한도를 넘으면 서버가 거절하고 "다른 기기에서 한도를 이미 사용했습니다"가 뜬다
+- **거부·종료 때도 서버에 알린다.** 안 그러면 프로필을 바꿔 거부를 없던 일로 만들 수 있다
+- **판정 직전에 반드시 다시 읽는다.** 차단 화면은 열려 있는 동안 사본이 낡을 수 있다.
+  화면 숫자가 잠깐 틀리는 건 괜찮지만, 낡은 값으로 실제 주사위를 굴리면 공정성 문제다
+- 인터넷이 끊기면 **로컬 값으로 계속 진행**한다. 앱이 멈추는 게 더 나쁜 결과라서.
+  대신 차단 화면에 `마지막 동기화: n분 전`이 표시된다
+- 차단 화면은 1초마다 화면을 다시 그리지만 background에는 5초마다(로컬, 네트워크 없음)만
+  묻고, 그 사이 경과 시간은 스스로 센다
+
+**왜 웹소켓(Realtime)을 안 썼나**: 실시간 구독은 표를 읽는 권한을 전제로 한다.
+`shared_state`를 잠가둔 지금 구조에서 쓰려면 읽기를 열어야 해서 "남의 표를 훔쳐볼 수 없게"
+막아둔 설계가 무너진다. 2초 폴링이면 사람 눈엔 즉각이라 그 비용을 치르지 않았다.
+
+**테스트 도구와 공유가 충돌한 적이 있다**: 테스트 칸(`DEV_SET_*`)이 로컬만 바꾸면 2초 뒤
+재동기화가 서버 값으로 덮어써서 테스트가 무효가 된다. 그래서 공유 중이면 서버에도 같이
+반영한다. (`dev_set_used_minutes`는 값을 통째로 지정하므로 `shareCode`를 아는 사람이
+남의 사용량을 바꿀 수 있다. 공유 코드가 비밀번호가 아니라는 기존 방침과 같은 수준의 위험)
+
 ---
 
 ## 메시지 프로토콜
@@ -287,10 +336,12 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 | `GET_SESSION` | timer.js | `{ sessionEndAt }` |
 | `GET_SETTINGS` | options.js | `{ settings, rules, defaults }` |
 | `SET_SETTINGS` `{settings}` | options.js | `{ ok, settings }` 또는 `{ ok:false, errors:[] }` |
-| `DEV_SET_ELAPSED` / `DEV_SET_USED` | blocked.js (테스트) | 갱신된 status |
+| `SYNC_SHARED` | blocked.js (열 때 + 2초마다) | `{ sharing, ok, status }`. 서버 값을 받아 사본에 덮어씀 |
+| `GET_STATS` `{timeZone}` | options.js | `{ ok, data, recordId }`. 오늘/7일/전체 + 일별 |
+| `DEV_SET_ELAPSED` / `DEV_SET_USED` | blocked.js (테스트) | 갱신된 status. 공유 중이면 서버에도 반영 |
 
 `buildStatus()`가 돌려주는 것: `elapsedMin` `usedTodayMin` `remainingMin`
-`cooldownLeftSec` `dailyLimit` `prob` `canAttempt`
+`cooldownLeftSec` `dailyLimit` `prob` `canAttempt` `sharing` `lastSyncAt`
 
 > **함정 1**: `ATTEMPT`가 한도에 막히면 `{ passed:false, blocked:true, status }`가
 > 온다. 이때는 `roll`과 `prob`이 **없다.** `outcome.blocked`를 먼저 확인하지
@@ -354,7 +405,7 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
   동작하므로 코드로는 막을 수 없는 **구조적 한계**다.
   - 압축해제 확장은 구글 계정을 따라 동기화되지 않아, 새 프로필엔 확장이 없다
   - `storage.sync`가 커버하는 건 "같은 계정 + 각 프로필에 수동 설치"뿐
-  - **다른 구글 계정 간 한도 공유는 `sync`로 불가능** → Supabase "공유 코드"로 해결 예정
+  - **다른 구글 계정 간 한도 공유는 `sync`로 불가능** → Supabase **공유 코드로 해결함** (아래 "한도 공유")
   - 시크릿/게스트 모드, `chrome://extensions`에서 토글 끄기로도 뚫린다
   - 크롬 정책 레지스트리로 막을 수 있으나 **하지 않기로 함** (통제가 너무 강함)
   → **보고서에는 "완전 차단이 아니라 우회에 마찰을 주는 것이 목표"로 쓸 것.**
@@ -441,19 +492,34 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 - **확인됨**: 실제 브라우저에서 시도 → `attempts`에 확률·난수·경과시간 기록,
   통과 시 `sessions`에도 기록. RLS로 읽기가 막힌 것도 확인
 
+### 2026-09-26~27 [Claude Code]
+- **공유 코드(A)**: `shareCode` 설정 추가. 기록 이름표를 `getRecordId()` 한 곳에서 결정
+- **기록 통계(B)**: `get_stats` 함수 + 설정 화면 카드/7일 표. 표 직접 읽기는 계속 막음
+- **한도 공유(C)**: `shared_state` + 함수 4개. 공유 코드가 있을 때만 작동. 서버가 진실
+  - 사용자 제안으로 동기화 지점을 "열 때 읽기 / 거부·시작·종료 때 쓰기"로 최소화
+  - 화면 갱신은 1초(화면) / 5초(로컬 질문)로 분리해 background 질문을 줄임
+- **버그 수정 1**: 차단 화면이 열릴 때 한 번만 서버를 읽어, 열려 있는 동안 다른 기기의
+  변경(0% vs 2.6%)을 못 따라갔다. → `시도하기` 직전 재확인 + 2초 재동기화.
+  화면 숫자보다 **판정이 낡은 값으로 이뤄지는 게** 진짜 문제였다
+- **버그 수정 2**: 재동기화가 테스트 칸의 로컬 override를 덮어써 테스트가 안 됐다
+  → 테스트 도구도 서버에 반영
+- 이용 시간 조절기: 한도에 닿으면 +/- 버튼 잠금
+- README.md 전면 재작성 (처음 보는 사람용)
+- **확인됨**: 두 프로필에서 한도·기준 시각 공유 동작
+
 ---
 
 ## 다음에 할 것
 
-1. **Supabase 활용** ← 지금 여기. 기록은 쌓이는데 아직 보는 화면이 없다
-   - **웹 대시보드** (Vercel) — 시도 횟수·통과율·사용 시간, 최근 7일 그래프.
-     읽기용 RLS 정책을 추가해야 한다 (`client_id`로 자기 것만)
-   - **확장 안에 간단한 통계 화면** — 대시보드보다 먼저 해볼 수 있는 작은 버전
-   - **"공유 코드"** — 각 프로필에 같은 코드를 넣으면 계정과 무관하게 한도 공유.
-     `loadState`/`saveState`만 Supabase를 보게 바꾸면 된다
-2. **화면 꾸미기** — 지금은 동작 확인용 최소 상태
+1. **화면 꾸미기** ← 지금 여기. 디자인 AI에게 넘길 프롬프트를 만들어 둠
+   - **`id="..."` 속성은 절대 바꾸면 안 된다.** JS가 id로 요소를 찾는다.
+   - 결과물을 받으면 id가 전부 살아있는지, `<script>`가 그대로인지 확인할 것
+2. **웹 대시보드** (Vercel, 6~8차시) — 확장 안 통계는 이미 있음. 웹 버전은 별도 프로젝트
 3. **종료 1분 전 알림** — `timer.js`가 빨개지는 것까지만 되어 있음
 4. **도메인 설정 일원화 / 차단 사이트 추가**
    - 1단계: `setAllowRule()`만 `config.js`를 읽게 (안전, 5분)
    - 2단계: `rules.json`을 동적 규칙으로, `content_scripts`를 `chrome.scripting`으로
-5. 제출 전 `config.js`의 `devMode`를 `false`로
+5. **제출 전 점검**
+   - `config.js`의 `devMode`를 `false`로 (테스트 칸이 사라지고 요청도 막힌다)
+   - `dev_set_used_minutes` 함수는 SQL에 남아 있다. 필요하면 Supabase에서 지울 것
+   - README에 스크린샷 추가
