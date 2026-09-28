@@ -14,8 +14,12 @@ create table if not exists public.shared_state (
   today_key      text not null,           -- '2026-09-27'. 날이 바뀌면 사용량 초기화
   used_today_min real not null default 0, -- 오늘 쓴 시간(분)
   wait_start_at  bigint,                  -- 확률 계산의 기준 시각(ms). 거부/종료 때 갱신
+  settings       jsonb,                   -- 공유되는 설정(곡선, 하루 한도 등). null이면 아직 없음
   updated_at     timestamptz not null default now()
 );
+
+-- 기존에 만든 표에는 없는 컬럼이므로 재실행 시를 위해 따로 추가한다
+alter table public.shared_state add column if not exists settings jsonb;
 
 -- 표를 직접 만지는 건 전부 막는다.
 -- 아래 함수들만 security definer 로 접근한다.
@@ -23,9 +27,11 @@ alter table public.shared_state enable row level security;
 
 
 -- ─────────────────────────────────────────────────────────────
--- 1) 읽어오기 — 차단 화면이 열릴 때 한 번
+-- 1) 읽어오기 — 차단 화면이 열릴 때, 2초마다, 시도하기 직전
 --
 -- 줄이 없으면 만들고, 날짜가 바뀌었으면 사용량을 0으로 되돌린 뒤 돌려준다.
+-- settings도 같이 돌려준다. 이미 도는 재동기화에 얹어 보내는 것이라
+-- 설정을 위해 새로 네트워크를 타지 않는다.
 -- ─────────────────────────────────────────────────────────────
 create or replace function public.sync_state(
   p_client_id text,
@@ -37,17 +43,18 @@ security definer
 set search_path = public
 as $$
 declare
-  v_today text;
-  v_used  real;
-  v_wait  bigint;
+  v_today    text;
+  v_used     real;
+  v_wait     bigint;
+  v_settings jsonb;
 begin
   insert into public.shared_state (client_id, today_key, used_today_min)
   values (p_client_id, p_today_key, 0)
   on conflict (client_id) do nothing;
 
   -- for update: 이 줄을 잠근다. 다른 요청은 끝날 때까지 기다린다
-  select today_key, used_today_min, wait_start_at
-    into v_today, v_used, v_wait
+  select today_key, used_today_min, wait_start_at, settings
+    into v_today, v_used, v_wait, v_settings
   from public.shared_state
   where client_id = p_client_id
   for update;
@@ -61,7 +68,8 @@ begin
 
   return json_build_object(
     'used_today_min', v_used,
-    'wait_start_at',  v_wait
+    'wait_start_at',  v_wait,
+    'settings',       v_settings
   );
 end;
 $$;
@@ -171,7 +179,39 @@ $$;
 
 
 -- ─────────────────────────────────────────────────────────────
--- 4) 사용량 직접 지정 — 테스트 전용
+-- 4) 설정 공유 — 옵션 화면에서 [저장]을 누를 때
+--
+-- 공유 코드가 있는 상태로 저장하면, 곡선·하루 한도 같은 설정을
+-- 이 코드의 '공용 설정'으로 올린다. 다른 기기들은 sync_state를 통해
+-- (재동기화 때) 이 값을 받아간다. 마지막으로 저장한 기기 값이 이긴다.
+--
+-- shareCode 자체는 담지 않는다. 그건 각 기기가 스스로 정하는 값이라,
+-- 여기 저장된 걸 그대로 받아쓰면 안 되기 때문이다.
+-- ─────────────────────────────────────────────────────────────
+create or replace function public.set_shared_settings(
+  p_client_id text,
+  p_today_key text,
+  p_settings  jsonb
+)
+returns json
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.shared_state (client_id, today_key, used_today_min, settings)
+  values (p_client_id, p_today_key, 0, p_settings)
+  on conflict (client_id) do update
+    set settings   = p_settings,
+        updated_at = now();
+
+  return json_build_object('settings', p_settings);
+end;
+$$;
+
+
+-- ─────────────────────────────────────────────────────────────
+-- 5) 사용량 직접 지정 — 테스트 전용
 --
 -- config.js의 devMode가 켜져 있을 때, 차단 화면 맨 아래 테스트 칸에서
 -- "오늘 사용 N분으로 적용"을 누르면 이 함수가 불린다.
@@ -210,9 +250,11 @@ $$;
 revoke all on function public.sync_state(text, text)                    from public;
 revoke all on function public.consume_minutes(text, text, int, int)     from public;
 revoke all on function public.set_wait_start(text, text, bigint)        from public;
+revoke all on function public.set_shared_settings(text, text, jsonb)    from public;
 revoke all on function public.dev_set_used_minutes(text, text, real)    from public;
 
 grant execute on function public.sync_state(text, text)                 to anon;
 grant execute on function public.consume_minutes(text, text, int, int)  to anon;
 grant execute on function public.set_wait_start(text, text, bigint)     to anon;
+grant execute on function public.set_shared_settings(text, text, jsonb) to anon;
 grant execute on function public.dev_set_used_minutes(text, text, real) to anon;

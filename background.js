@@ -152,7 +152,47 @@ async function pullShared() {
     lastSyncAt: Date.now()
   });
 
+  if (result.data.settings) {
+    // 다른 기기가 올려둔 설정(곡선, 하루 한도 등)을 받아온다.
+    // 새 네트워크 요청이 아니라 방금 받은 응답에 이미 들어있던 것이다.
+    await mergeSharedSettings(result.data.settings);
+
+  } else {
+    // 이 코드로 설정을 올린 사람이 아직 아무도 없다.
+    //
+    // 사용 시간·기준 시각은 sync_state가 줄이 없으면 자동으로 만들어주는데
+    // 설정은 그렇지 않다 — 옵션 화면에서 [저장]을 눌러야만 생긴다.
+    // 그러면 "코드만 넣으면 맞을 것"이라는 기대와 어긋나므로, 여기서
+    // 지금 이 기기의 설정을 그룹의 첫 값으로 자동으로 올려준다.
+    //
+    // 두 기기가 거의 동시에 이 상황을 맞아도 문제없다. 나중에 쓴 값이
+    // 이기고, 그다음 재동기화(몇 초 안)에서 둘 다 그 값으로 맞춰진다.
+    const local = await loadSettings();
+    const { shareCode, ...toShare } = local;
+    await setSharedSettings(code, getTodayKey(), toShare);
+  }
+
   return { sharing: true, ok: true };
+}
+
+
+// 서버에서 받아온 공유 설정을 로컬에 합친다.
+//
+// shareCode 필드는 절대 덮어쓰지 않는다. 그건 이 기기가 스스로 정한 값이라,
+// 서버 값(원래 안 담겨 있지만 혹시 몰라서)으로 바뀌면 안 되기 때문이다.
+//
+// 서버 값이 이상해도(validateSettings 실패) 조용히 무시한다.
+// 여기서 요청이 거절돼 판정이 막히면 안 된다.
+async function mergeSharedSettings(serverSettings) {
+  if (!serverSettings) return;   // 이 코드로 아직 아무도 설정을 올린 적 없음
+
+  const local = await loadSettings();
+  const merged = { ...local, ...serverSettings, shareCode: local.shareCode };
+  const checked = validateSettings(merged);
+
+  if (checked.ok) {
+    await STORE.set({ settings: checked.settings });
+  }
 }
 
 
@@ -253,14 +293,46 @@ async function loadSettings() {
 //
 // 일부만 저장하지 않고 전부 거부하는 이유: 반쯤 적용된 설정이 제일 헷갈린다.
 async function saveSettings(changes) {
-  const merged = { ...(await loadSettings()), ...changes };
+  const previous = await loadSettings();
+  const merged = { ...previous, ...changes };
   const checked = validateSettings(merged);
 
   if (!checked.ok) {
     return { ok: false, errors: checked.errors };
   }
 
+  const newCode = (checked.settings.shareCode || '').trim();
+  const oldCode = (previous.shareCode || '').trim();
+
+  // 공유 코드를 '새로' 넣거나 다른 코드로 바꿨다면: 그 코드로 이미 공유되고
+  // 있는 설정이 있는지 먼저 확인한다. 있으면 그걸 따른다.
+  //
+  // 왜 이렇게 하나: 그룹에 새로 들어가는 것은 그 그룹의 현재 설정을
+  // 받아오는 것이지, 방금 이 화면에서 만지던 값으로 그룹 설정을
+  // 덮어쓰는 게 아니다. (덮어쓰면 먼저 세팅해둔 사람 것이 날아간다)
+  if (newCode && newCode !== oldCode) {
+    const existing = await pullSharedState(newCode, getTodayKey());
+
+    if (existing.ok && existing.data && existing.data.settings) {
+      const adopted = { ...checked.settings, ...existing.data.settings, shareCode: newCode };
+      const adoptedChecked = validateSettings(adopted);
+
+      if (adoptedChecked.ok) {
+        await STORE.set({ settings: adoptedChecked.settings });
+        return { ok: true, settings: adoptedChecked.settings, adopted: true };
+      }
+    }
+  }
+
   await STORE.set({ settings: checked.settings });
+
+  // 공유 중이면 방금 저장한 값을 서버에도 올린다.
+  // 다른 기기들은 재동기화 때(몇 초 안에) 이 값을 받아간다.
+  if (newCode) {
+    const { shareCode, ...toShare } = checked.settings;
+    await setSharedSettings(newCode, getTodayKey(), toShare);
+  }
+
   return { ok: true, settings: checked.settings };
 }
 

@@ -190,6 +190,17 @@ async function pushSharedWaitStart(clientId, todayKey, waitStartAt) {
 }
 
 
+// 설정(곡선, 하루 한도 등)을 서버에 올린다. 옵션 화면에서 [저장]을 누를 때.
+// shareCode 필드는 빼고 보낸다. 그건 각 기기가 스스로 정하는 값이다.
+async function setSharedSettings(clientId, todayKey, settings) {
+  return callFunction('set_shared_settings', {
+    p_client_id: clientId,
+    p_today_key: todayKey,
+    p_settings: settings
+  });
+}
+
+
 // 테스트 전용. 오늘 사용량을 통째로 지정한다.
 // consume_minutes는 '더하기'만 하고 한도를 넘으면 거부하므로,
 // 테스트 칸에서 값을 통째로 바꿔치기하려면 이 함수가 따로 필요하다.
