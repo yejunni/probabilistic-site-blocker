@@ -28,6 +28,13 @@ create table if not exists public.attempts (
 create index if not exists attempts_created_at_idx
   on public.attempts (created_at desc);
 
+-- 통계(get_stats)는 "이 공유 코드의 기록"을 찾는다.
+-- 이 색인이 없으면 찾을 때마다 표 전체를 처음부터 훑는다.
+-- 기록은 지우지 않고 계속 쌓으므로, 쌓일수록 이 색인이 중요해진다.
+-- (client_id로 먼저 좁히고 그 안에서 날짜순이라 두 조건을 한 번에 탄다)
+create index if not exists attempts_client_created_idx
+  on public.attempts (client_id, created_at desc);
+
 
 -- ─────────────────────────────────────────────────────────────
 -- 2) 이용 기록
@@ -42,6 +49,10 @@ create table if not exists public.sessions (
 
 create index if not exists sessions_created_at_idx
   on public.sessions (created_at desc);
+
+-- attempts와 같은 이유
+create index if not exists sessions_client_created_idx
+  on public.sessions (client_id, created_at desc);
 
 
 -- ─────────────────────────────────────────────────────────────
