@@ -225,6 +225,14 @@ function collectForm() {
 // 미리보기용으로 따로 계산하면 실제 동작과 어긋날 수 있기 때문이다.
 // ─────────────────────────────────────────────────────────────
 
+// 그래프 색은 extension.css의 색 변수에서 읽어온다.
+// 코드에 색을 적어두면 디자인을 바꾸거나 다크 모드가 될 때 그래프만 따로 논다.
+// 변수를 못 찾으면(스타일 파일이 안 불렸을 때) 괄호 안의 기본색을 쓴다.
+function cssColor(name, fallback) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
+
 const PREVIEW_X_MAX = 180;                          // x축 최대 (분)
 const PREVIEW_TIMES = [10, 20, 30, 40, 60, 80, 120]; // 표에 보여줄 시점
 const HANDLE_RADIUS = 6;                            // 점 손잡이 크기(px)
@@ -272,10 +280,10 @@ function drawPreview() {
   drawGrid(ctx, settings, { xToPx, yToPx, pad, plotW, plotH, width, height });
 
   // 실선: 오늘 사용 시간을 0으로 본 확률
-  drawCurve(ctx, settings, 0, { xToPx, yToPx, pad, width }, '#1a73e8', false);
+  drawCurve(ctx, settings, 0, { xToPx, yToPx, pad, width }, cssColor('--accent', '#1c4d8d'), false);
 
   // 점선: 오늘 사용 시간을 반영한 확률
-  drawCurve(ctx, settings, usedMin, { xToPx, yToPx, pad, width }, '#e8710a', true);
+  drawCurve(ctx, settings, usedMin, { xToPx, yToPx, pad, width }, cssColor('--coral-strong', '#e85e68'), true);
 
   // 점 잇기 곡선일 때만 끌 수 있는 손잡이를 그린다
   if (settings.curve === 'points') {
@@ -290,12 +298,12 @@ function drawPreview() {
 // 눈금과 격자
 function drawGrid(ctx, settings, g) {
   ctx.font = '11px sans-serif';
-  ctx.fillStyle = '#999';
+  ctx.fillStyle = cssColor('--muted', '#61718b');
 
   // 가로선 (확률)
   for (const pct of [0, 25, 50, 75, 100]) {
     const y = g.yToPx(pct);
-    ctx.strokeStyle = '#eee';
+    ctx.strokeStyle = cssColor('--line', '#c9e4e8');
     ctx.beginPath();
     ctx.moveTo(g.pad.left, y);
     ctx.lineTo(g.width - g.pad.right, y);
@@ -309,7 +317,7 @@ function drawGrid(ctx, settings, g) {
   // 세로선 (시간)
   for (let min = 0; min <= PREVIEW_X_MAX; min += 30) {
     const x = g.xToPx(min);
-    ctx.strokeStyle = '#eee';
+    ctx.strokeStyle = cssColor('--line', '#c9e4e8');
     ctx.beginPath();
     ctx.moveTo(x, g.pad.top);
     ctx.lineTo(x, g.height - g.pad.bottom);
@@ -322,7 +330,7 @@ function drawGrid(ctx, settings, g) {
 
   // 확률 상한선. 곡선이 어디서 잘리는지 보이게 한다
   const capY = g.yToPx(settings.maxProb);
-  ctx.strokeStyle = '#bbb';
+  ctx.strokeStyle = cssColor('--line-strong', '#9fcbd6');
   ctx.setLineDash([3, 3]);
   ctx.beginPath();
   ctx.moveTo(g.pad.left, capY);
@@ -330,7 +338,7 @@ function drawGrid(ctx, settings, g) {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  ctx.fillStyle = '#999';
+  ctx.fillStyle = cssColor('--muted', '#61718b');
   ctx.textAlign = 'left';
   ctx.textBaseline = 'bottom';
   ctx.fillText('상한 ' + settings.maxProb + '%', g.pad.left + 4, capY - 2);
@@ -366,9 +374,11 @@ function drawHandles(ctx, points, xToPx, yToPx) {
 
     ctx.beginPath();
     ctx.arc(x, y, HANDLE_RADIUS, 0, Math.PI * 2);
-    ctx.fillStyle = (index === draggingIndex) ? '#e8710a' : '#fff';
+    ctx.fillStyle = (index === draggingIndex)
+      ? cssColor('--coral-strong', '#e85e68')
+      : cssColor('--surface-solid', '#fff');
     ctx.fill();
-    ctx.strokeStyle = '#1a73e8';
+    ctx.strokeStyle = cssColor('--accent', '#1c4d8d');
     ctx.lineWidth = 2;
     ctx.stroke();
   });
@@ -379,7 +389,7 @@ function updatePreviewHint(settings, usedMin) {
   const hint = document.getElementById('previewHint');
 
   const solid = '파란 실선 = 오늘 사용 0분일 때의 확률';
-  const dashed = '주황 점선 = 오늘 ' + usedMin + '분 썼을 때';
+  const dashed = '분홍 점선 = 오늘 ' + usedMin + '분 썼을 때';
 
   if (settings.usagePenalty === 0) {
     hint.textContent = solid + ' / ' + dashed +
@@ -748,7 +758,7 @@ async function init() {
 function showStartupError(text) {
   const box = document.createElement('p');
   box.textContent = text;
-  box.style.color = '#c23';
+  box.style.color = cssColor('--danger', '#d84252');
   box.style.fontWeight = 'bold';
   document.body.prepend(box);
   console.error('[options]', text);

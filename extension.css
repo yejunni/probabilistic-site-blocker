@@ -1,0 +1,1073 @@
+/*
+  extension.css
+  차단 화면(blocked.html)과 설정 화면(options.html)이 같이 쓰는 스타일.
+  Figma Make에서 만든 디자인을 가져온 것이다.
+
+  주의: 여기서는 모양만 바꾼다. 요소를 보이거나 숨기는 건 JS가
+  hidden 속성으로 한다. CSS에서 display: none을 걸면 JS가 보이게
+  하려 해도 안 보인다. (실제로 테스트 칸이 그렇게 사라진 적이 있다)
+*/
+
+:root {
+  color-scheme: light dark;
+  --bg: #f8f5e9;
+  --surface: rgba(255, 253, 246, 0.91);
+  --surface-solid: #fffdf6;
+  --surface-soft: #edf7f5;
+  --ink: #142f58;
+  --muted: #61718b;
+  --line: #c9e4e8;
+  --line-strong: #9fcbd6;
+  --accent: #1c4d8d;
+  --accent-strong: #143462;
+  --accent-soft: #d8eff8;
+  --mint: #badfdb;
+  --coral: #ffa4a4;
+  --coral-strong: #e85e68;
+  --success: #247a70;
+  --success-soft: #d9f2eb;
+  --danger: #d84252;
+  --danger-soft: #ffe0df;
+  --focus: #4f8fc8;
+  --shadow: 0 24px 60px rgba(28, 77, 141, 0.12);
+  --radius-lg: 24px;
+  --radius-md: 14px;
+  --radius-sm: 9px;
+  --font: Pretendard, "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --serif: "Iowan Old Style", "Noto Serif KR", Georgia, serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 12% 4%, rgba(186, 223, 219, 0.72), transparent 31rem),
+    radial-gradient(circle at 88% 12%, rgba(255, 164, 164, 0.28), transparent 26rem),
+    var(--bg);
+  font-family: var(--font);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  min-height: 42px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  padding: 8px 16px;
+  color: var(--ink);
+  background: var(--surface-solid);
+  box-shadow: 0 1px 1px rgba(22, 24, 20, 0.04);
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+button:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(35, 68, 56, 0.09);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+/* 잠긴 버튼은 눌리지 않는다는 게 보여야 한다 (한도에 닿은 +5 등) */
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--focus) 28%, transparent);
+  outline-offset: 2px;
+}
+
+input[type="text"],
+input[type="number"] {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  color: var(--ink);
+  background: var(--surface-solid);
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   차단 화면
+   ───────────────────────────────────────────────────────────── */
+
+.blocked-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  text-align: center;
+}
+
+.blocked-shell {
+  position: relative;
+  width: min(100%, 650px);
+  padding: 28px 44px 26px;
+  overflow: hidden;
+  border: 1px solid rgba(185, 182, 172, 0.78);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+
+.blocked-shell::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--coral));
+  transform: translateX(-50%);
+}
+
+.yj-mark {
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 2px solid var(--accent);
+  border-radius: 11px 4px 11px 4px;
+  color: var(--accent);
+  background: var(--surface-solid);
+  box-shadow: 4px 4px 0 var(--coral);
+  font-size: 12px;
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: -0.08em;
+  line-height: 1;
+  transform: rotate(-3deg);
+}
+
+.blocked-brandbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 13px;
+  margin-bottom: 31px;
+}
+
+.brand-divider {
+  width: 1px;
+  height: 25px;
+  background: var(--line-strong);
+}
+
+.youtube-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.youtube-icon {
+  position: relative;
+  display: inline-block;
+  width: 29px;
+  height: 20px;
+  flex: 0 0 auto;
+  border-radius: 7px;
+  background: #ff0033;
+  box-shadow: 0 3px 0 color-mix(in srgb, #ff0033 66%, black);
+}
+
+.youtube-icon::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 11px;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 8px solid white;
+}
+
+#prob {
+  margin: 0;
+  color: var(--accent);
+  font-family: var(--serif);
+  font-size: clamp(92px, 20vw, 168px);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.08em;
+  line-height: 0.9;
+  text-shadow: 4px 5px 0 color-mix(in srgb, var(--mint) 60%, transparent);
+}
+
+#info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  margin: 18px 0 22px;
+  padding: 9px 18px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--mint) 55%, var(--surface-solid));
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+#syncInfo {
+  min-height: 18px;
+  margin: -13px 0 15px;
+  color: color-mix(in srgb, var(--muted) 65%, transparent);
+  font-size: 11px;
+}
+
+#attemptBtn {
+  min-width: 180px;
+  min-height: 52px;
+  border-color: var(--accent);
+  border-radius: 999px;
+  color: #fff;
+  background: var(--accent);
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: 0 8px 0 color-mix(in srgb, var(--accent-strong) 82%, black);
+}
+
+#attemptBtn:hover:not(:disabled) {
+  color: #fff;
+  background: var(--accent-strong);
+  box-shadow: 0 5px 0 color-mix(in srgb, var(--accent-strong) 82%, black);
+  transform: translateY(3px);
+}
+
+#result {
+  display: grid;
+  place-items: center;
+  min-height: 54px;
+  margin: 14px auto 0;
+  border-radius: var(--radius-md);
+  font-size: 18px;
+  font-weight: 750;
+}
+
+#result.pass {
+  grid-auto-flow: column;
+  justify-content: center;
+  gap: 11px;
+  border: 1px solid color-mix(in srgb, var(--success) 28%, transparent);
+  color: var(--success);
+  background: var(--success-soft);
+  animation: success-rise 520ms cubic-bezier(0.18, 0.89, 0.32, 1.18);
+}
+
+#result.pass::before {
+  content: "";
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background:
+    linear-gradient(135deg, transparent 45%, var(--surface-solid) 46% 57%, transparent 58%) 9px 13px / 13px 8px no-repeat,
+    var(--success);
+  box-shadow: 0 4px 0 color-mix(in srgb, var(--success) 65%, black);
+  animation: success-pop 500ms cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+
+#result.fail {
+  grid-auto-flow: column;
+  justify-content: center;
+  gap: 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent);
+  color: var(--danger);
+  background: var(--danger-soft);
+  animation: fail-shake 520ms cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+#result.fail::before {
+  content: "";
+  width: 43px;
+  height: 43px;
+  background: linear-gradient(135deg, #ffca55 0 44%, var(--coral-strong) 45% 100%);
+  clip-path: polygon(50% 0, 61% 27%, 87% 13%, 76% 40%, 100% 50%, 73% 60%, 87% 87%, 60% 75%, 50% 100%, 39% 74%, 13% 87%, 25% 60%, 0 50%, 27% 39%, 13% 13%, 40% 27%);
+  filter: drop-shadow(0 3px 0 rgba(20, 52, 98, 0.22));
+  animation: burst-pop 560ms cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+
+@keyframes fail-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px) rotate(-1deg); }
+  40% { transform: translateX(7px) rotate(1deg); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(3px); }
+}
+
+@keyframes burst-pop {
+  0% { opacity: 0; transform: scale(0.2) rotate(-35deg); }
+  68% { opacity: 1; transform: scale(1.28) rotate(9deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0); }
+}
+
+@keyframes success-rise {
+  0% { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes success-pop {
+  0% { opacity: 0; transform: scale(0.3) rotate(-18deg); }
+  70% { opacity: 1; transform: scale(1.2) rotate(5deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0); }
+}
+
+#durations {
+  margin: 14px auto 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-solid) 82%, transparent);
+}
+
+#durations > p:first-child {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+#stepper {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.step-row {
+  display: flex;
+  gap: 8px;
+}
+
+.step-row button {
+  min-width: 70px;
+  min-height: 36px;
+  padding: 5px 12px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border-color: transparent;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.step-value {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 8px 0;
+}
+
+#minutesInput {
+  width: 130px;
+  border: 0;
+  padding: 0;
+  text-align: center;
+  color: var(--ink);
+  background: transparent;
+  font-family: var(--serif);
+  font-size: 58px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.step-value span {
+  color: var(--muted);
+  font-size: 15px;
+}
+
+#minutesHint {
+  min-height: 20px;
+  margin: 12px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#startBtn {
+  min-width: 150px;
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+  font-weight: 700;
+}
+
+.settings-row {
+  margin-top: 14px;
+}
+
+#settingsBtn {
+  display: inline-block;
+  min-height: 34px;
+  border-color: transparent;
+  padding: 4px 12px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+#settingsBtn:hover {
+  color: var(--accent-strong);
+}
+
+/*
+  테스트 칸. 여기서 display를 정하지 않는다.
+  보일지 말지는 config.js의 devMode를 보고 blocked.js가 hidden으로 정한다.
+*/
+#dev {
+  margin-top: 26px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--line-strong);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#dev > p {
+  margin: 0 0 8px;
+  font-weight: 700;
+}
+
+#dev label {
+  margin: 0 4px;
+}
+
+#dev input {
+  width: 58px;
+  padding: 5px;
+}
+
+#dev button {
+  min-height: 32px;
+  padding: 4px 9px;
+  font-size: 11px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   설정 화면
+   ───────────────────────────────────────────────────────────── */
+
+.options-page {
+  padding: 42px 20px 116px;
+}
+
+.options-shell {
+  width: min(100%, 1180px);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.options-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 26px;
+  grid-column: 1 / -1;
+}
+
+.options-header h1 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: clamp(29px, 5vw, 43px);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+}
+
+.title-lockup {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.title-lockup .yj-mark {
+  width: 46px;
+  height: 46px;
+  flex: 0 0 auto;
+  font-size: 14px;
+}
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+}
+
+.back-link:hover {
+  color: var(--accent-strong);
+}
+
+.options-header p {
+  max-width: 360px;
+  margin: 6px 0 4px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: right;
+}
+
+.options-meta {
+  display: grid;
+  justify-items: end;
+}
+
+.settings-section {
+  margin-top: 0;
+  padding: 26px 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: 0 8px 28px rgba(46, 45, 40, 0.04);
+}
+
+/* 곡선, 미리보기, 통계는 두 칸을 차지한다 */
+.settings-section:nth-of-type(3),
+.settings-section:nth-of-type(4),
+.settings-section:nth-of-type(7) {
+  grid-column: 1 / -1;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 18px;
+}
+
+.section-number {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--muted);
+  font-family: var(--serif);
+  font-size: 13px;
+}
+
+.section-heading h2 {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+}
+
+.hint {
+  margin: 6px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.hint.warn {
+  color: var(--danger);
+}
+
+.preset-group {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.preset-group button {
+  min-height: 50px;
+  margin: 0;
+  font-weight: 700;
+}
+
+.preset-group button[data-preset="normal"] {
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.8fr) minmax(180px, 2fr) 88px;
+  align-items: center;
+  gap: 16px;
+  margin: 13px 0;
+}
+
+.row label {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.row .value {
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.curve-options {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 9px;
+  margin-top: 16px;
+}
+
+.curve-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 66px;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-solid);
+  cursor: pointer;
+}
+
+.curve-option:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.curve-option input {
+  margin-top: 4px;
+}
+
+.curve-copy strong,
+.curve-copy span {
+  display: block;
+}
+
+.curve-copy strong {
+  font-size: 13px;
+}
+
+.curve-copy span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.curve-detail {
+  margin-top: 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-solid);
+}
+
+.curve-detail summary {
+  padding: 12px 14px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.curve-detail[open] summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.curve-detail > [data-curve-group] {
+  margin: 12px;
+}
+
+[data-curve-group] {
+  margin-top: 16px;
+  padding: 17px 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-soft) 58%, var(--surface-solid));
+}
+
+.preview-section {
+  padding: 30px 32px;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  box-shadow: 0 16px 40px rgba(28, 77, 141, 0.1);
+}
+
+.preview-intro {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+}
+
+.preview-intro .hint {
+  max-width: 380px;
+  text-align: right;
+}
+
+.canvas-frame {
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-solid);
+}
+
+/*
+  캔버스 크기와 격자·눈금은 options.js가 직접 정하고 그린다.
+  여기서 높이(min-height)나 배경 격자를 주면 두 가지가 어긋난다.
+    - 높이가 달라지면 그림이 늘어나서 점을 잡는 위치가 틀어진다
+    - 배경 격자가 JS 격자와 겹쳐서 두 겹으로 보인다
+*/
+#preview {
+  width: 100%;
+  display: block;
+  touch-action: none;
+}
+
+.shape-title {
+  font-size: 12px;
+}
+
+.shape-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.shape-actions button {
+  min-height: 34px;
+  margin: 0;
+  padding: 5px 10px;
+  font-size: 11px;
+}
+
+.preview-data {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(300px, 1.2fr);
+  gap: 22px;
+  align-items: start;
+  margin-top: 20px;
+}
+
+.preview-data .row {
+  grid-template-columns: 110px 1fr 55px;
+  margin-top: 3px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 400;
+  text-align: left;
+}
+
+th {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+}
+
+td {
+  font-variant-numeric: tabular-nums;
+}
+
+#shareCode {
+  width: 100%;
+}
+
+code {
+  border-radius: 4px;
+  padding: 1px 4px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  font-size: 11px;
+}
+
+#statsCards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 14px 0 24px;
+}
+
+.stat-card {
+  min-height: 112px;
+  padding: 15px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-solid);
+}
+
+.stat-card .title {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.stat-card .big {
+  margin-top: 6px;
+  font-family: var(--serif);
+  font-size: 28px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-card .sub {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.table-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+
+.bar {
+  display: inline-block;
+  min-width: 1px;
+  height: 8px;
+  border-radius: 99px;
+  background: var(--accent);
+}
+
+#statsRefreshBtn {
+  min-height: 34px;
+  padding: 5px 11px;
+  font-size: 11px;
+}
+
+#actions {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 72px;
+  padding: 11px 20px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-solid) 90%, transparent);
+  box-shadow: 0 -12px 30px rgba(46, 45, 40, 0.07);
+  backdrop-filter: blur(16px);
+}
+
+#saveBtn {
+  min-width: 120px;
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+  font-weight: 750;
+}
+
+#resetBtn {
+  color: var(--muted);
+  background: transparent;
+}
+
+#saveMsg {
+  margin-left: 8px;
+  font-size: 12px;
+}
+
+#saveMsg.ok {
+  color: var(--success);
+}
+
+#saveMsg.fail {
+  color: var(--danger);
+  text-align: left;
+}
+
+#saveMsg ul {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   좁은 화면
+   ───────────────────────────────────────────────────────────── */
+
+@media (max-width: 720px) {
+  .blocked-page {
+    padding: 14px;
+  }
+
+  .blocked-shell {
+    padding: 24px 20px;
+  }
+
+  #prob {
+    font-size: clamp(82px, 30vw, 130px);
+  }
+
+  #info {
+    font-size: 11px;
+  }
+
+  #dev {
+    line-height: 2.8;
+  }
+
+  .options-page {
+    padding: 24px 12px 104px;
+  }
+
+  .options-shell {
+    display: block;
+  }
+
+  .options-header {
+    display: block;
+  }
+
+  .options-header p {
+    margin-top: 10px;
+    text-align: left;
+  }
+
+  .options-meta {
+    justify-items: start;
+    margin-top: 16px;
+  }
+
+  .settings-section,
+  .preview-section {
+    padding: 21px 16px;
+    margin-top: 14px;
+  }
+
+  .preset-group,
+  .curve-options,
+  .preview-data,
+  #statsCards {
+    grid-template-columns: 1fr;
+  }
+
+  .row,
+  .preview-data .row {
+    grid-template-columns: 1fr 64px;
+    gap: 7px 10px;
+  }
+
+  .row label {
+    grid-column: 1 / -1;
+  }
+
+  .preview-intro {
+    display: block;
+  }
+
+  .preview-intro .hint {
+    text-align: left;
+  }
+
+  #statsDaily {
+    min-width: 560px;
+  }
+
+  .table-scroll {
+    overflow-x: auto;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   다크 모드
+   ───────────────────────────────────────────────────────────── */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101f38;
+    --surface: rgba(20, 47, 88, 0.9);
+    --surface-solid: #18345d;
+    --surface-soft: #1c416d;
+    --ink: #f8f5e9;
+    --muted: #b8c9da;
+    --line: #315781;
+    --line-strong: #4d77a3;
+    --accent: #8fc7ef;
+    --accent-strong: #bce1f6;
+    --accent-soft: #244d76;
+    --mint: #568c91;
+    --coral: #ffa4a4;
+    --coral-strong: #ff7f87;
+    --success: #8dd8cb;
+    --success-soft: #1e514f;
+    --danger: #ff9b9f;
+    --danger-soft: #5a3040;
+    --focus: #8fc7ef;
+    --shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+  }
+
+  body {
+    background:
+      radial-gradient(circle at 12% 4%, rgba(85, 140, 145, 0.24), transparent 32rem),
+      radial-gradient(circle at 88% 12%, rgba(255, 164, 164, 0.12), transparent 26rem),
+      var(--bg);
+  }
+
+  #attemptBtn,
+  #startBtn,
+  #saveBtn,
+  .preset-group button[data-preset="normal"] {
+    color: #10253f;
+  }
+
+  #attemptBtn:hover:not(:disabled) {
+    color: #10253f;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+}
