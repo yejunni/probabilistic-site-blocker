@@ -14,12 +14,14 @@ const durationsEl = document.getElementById('durations');
 // 이게 없으면 화면을 연 순간의 확률이 그대로 멈춰 있게 된다.
 let ticker = null;
 
-// background에 실제로 물어보는 주기(초). (로컬 사본만 보는 것, 네트워크 없음)
+// 아래 두 주기는 config.js에서 정한다 (askEverySec, resyncEverySec).
+//
+// ASK_EVERY_SEC: background에 실제로 물어보는 주기(초). 로컬 사본만 보므로 네트워크 없음.
 // 화면은 1초마다 다시 그리지만, 물어보는 건 이만큼에 한 번만 한다.
 // 경과 시간은 아래에서 스스로 세므로 초 표시는 그대로 부드럽다.
-const ASK_EVERY_SEC = 5;
+const ASK_EVERY_SEC = CONFIG.askEverySec;
 
-// 공유 서버와 다시 맞추는 주기(초). (여기만 네트워크를 탄다)
+// RESYNC_EVERY_SEC: 공유 서버와 다시 맞추는 주기(초). 여기만 네트워크를 탄다.
 //
 // 차단 화면은 열릴 때 딱 한 번만 서버를 읽는다. 화면을 오래 열어둔 채
 // 다른 기기가 거부당하거나 세션을 끝내면, 이 화면은 그 사실을 모른 채
@@ -31,9 +33,10 @@ const ASK_EVERY_SEC = 5;
 // 표의 읽기를 열어야 해서 "코드를 아는 사람이 남의 표를 훔쳐볼 수 없게"
 // 막아둔 지금 구조를 다시 짜야 한다. 2초 간격이면 사람 눈에는 사실상
 // 즉각이면서 그 복잡함 없이 같은 체감을 준다.
-const RESYNC_EVERY_SEC = 2;
+const RESYNC_EVERY_SEC = CONFIG.resyncEverySec;
 
 let tickCount = 0;
+let asking = false;       // background에 묻는 중인지. 답이 오기 전에 또 묻지 않으려고
 let lastStatus = null;    // 마지막으로 받아온 값
 let lastStatusAt = 0;     // 그걸 받아온 시각(ms)
 
@@ -71,10 +74,11 @@ function render(status) {
     attemptBtn.disabled = true;
     attemptBtn.textContent = '오늘 한도를 다 썼습니다';
 
-  } else if (status.cooldownLeftSec > 0) {
-    // 거부당한 직후. 남은 초는 background.js가 계산해서 보내준다
+  } else if (status.inSession) {
+    // 다른 탭이나 다른 기기에서 이미 이용 중이다.
+    // 이때 또 통과하면 세션이 겹쳐 앞의 것이 덮어써지므로 background도 막는다.
     attemptBtn.disabled = true;
-    attemptBtn.textContent = `${status.cooldownLeftSec}초 후 다시 시도`;
+    attemptBtn.textContent = '이용 중입니다';
 
   } else {
     attemptBtn.disabled = false;
@@ -132,14 +136,26 @@ function withElapsedSinceFetch(status) {
 function startTicking() {
   if (ticker) return;
 
-  ticker = setInterval(() => {
+  ticker = setInterval(async () => {
     tickCount++;
 
-    if (tickCount % RESYNC_EVERY_SEC === 0) {
-      syncAndRefresh();
-    } else if (tickCount % ASK_EVERY_SEC === 0 || !lastStatus) {
-      refresh();
-    } else {
+    // 인터넷이 느리면 동기화가 2초를 넘길 수 있다.
+    // 그 사이 또 보내면 요청이 쌓이고, 늦게 온 옛 답이 새 답을 덮어쓴다.
+    // 그래서 답이 오기 전에는 묻지 않고 화면만 다시 그린다.
+    const shouldSync = tickCount % RESYNC_EVERY_SEC === 0;
+    const shouldAsk = tickCount % ASK_EVERY_SEC === 0 || !lastStatus;
+
+    if (!asking && (shouldSync || shouldAsk)) {
+      asking = true;
+      try {
+        if (shouldSync) await syncAndRefresh();
+        else            await refresh();
+      } catch (e) {
+        console.warn('[차단화면] 상태를 못 받아옴:', e.message);
+      } finally {
+        asking = false;
+      }
+    } else if (lastStatus) {
       render(withElapsedSinceFetch(lastStatus));
     }
   }, 1000);
@@ -156,17 +172,33 @@ function stopTicking() {
 // ─────────────────────────────────────────────────────────────
 
 attemptBtn.addEventListener('click', async () => {
-  // 연타로 여러 번 판정되는 걸 막는다
+  // 연타로 여러 번 판정되는 걸 막는다.
+  // 갱신도 잠깐 멈춘다. 안 그러면 판정을 기다리는 사이 render()가
+  // 버튼을 다시 켜서, 그 틈에 한 번 더 누를 수 있다.
   attemptBtn.disabled = true;
+  stopTicking();
 
-  const outcome = await ask({ type: 'ATTEMPT' });
+  let outcome;
+  try {
+    outcome = await ask({ type: 'ATTEMPT' });
+  } catch (e) {
+    outcome = null;   // 확장을 새로고침한 직후 등, background와 연결이 끊긴 경우
+  }
 
-  if (outcome.blocked) {
-    // 누르는 순간 쿨타임이나 한도에 걸려서 판정 자체를 못 한 경우.
+  if (!outcome || outcome.ok === false) {
+    // background에서 오류가 났다. 판정이 됐는지 알 수 없으므로 결과는 안 보여준다.
+    resultEl.textContent = (outcome && outcome.error) || '판정하지 못했습니다. 화면을 새로고침(F5) 해주세요';
+    resultEl.className = 'fail';
+    attemptBtn.disabled = false;
+    startTicking();
+
+  } else if (outcome.blocked) {
+    // 누르는 순간 한도에 걸렸거나 이용 중이라 판정 자체를 못 한 경우.
     // 주사위를 굴리지도 않았으므로 결과를 표시하지 않는다.
     resultEl.textContent = '';
     resultEl.className = '';
     render(outcome.status);
+    startTicking();
 
   } else if (outcome.passed) {
     // 주사위가 확률보다 작게 나오면 통과다.
@@ -184,8 +216,9 @@ attemptBtn.addEventListener('click', async () => {
       `실패`;
     resultEl.className = 'fail';
 
-    // 쿨타임이 걸린 최신 상태를 받아 다시 그린다
+    // 경과 시간이 0으로 초기화된 최신 상태를 받아 다시 그린다
     render(outcome.status);
+    startTicking();
   }
 });
 
@@ -224,8 +257,8 @@ function showDurationPicker(remainingMin) {
   const input = document.getElementById('minutesInput');
   input.max = remainingMin;
 
-  // 기본값은 10분. 남은 한도가 그보다 적으면 남은 만큼만.
-  input.value = Math.min(10, remainingMin);
+  // 처음 값은 config.js의 defaultSessionMin. 남은 한도가 그보다 적으면 남은 만큼만.
+  input.value = Math.min(CONFIG.defaultSessionMin, remainingMin);
 
   durationsEl.hidden = false;
   updateMinutesHint();

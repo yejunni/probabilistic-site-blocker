@@ -44,16 +44,16 @@ function createBox() {
 
 
 // 남은 시간을 계산해서 "4:32" 모양으로 상자에 써준다.
-function updateBox(endAt) {
+function updateBox(endAt, warnSec) {
   const leftSec = Math.max(Math.ceil((endAt - Date.now()) / 1000), 0);
 
   const minutes = Math.floor(leftSec / 60);
   const seconds = String(leftSec % 60).padStart(2, '0');
   timerBox.textContent = `${minutes}:${seconds}`;
 
-  // 마지막 1분은 빨갛게 바꿔서 곧 끝난다는 걸 알린다
+  // 마지막 warnSec초는 빨갛게 바꿔서 곧 끝난다는 걸 알린다
   timerBox.style.background =
-    leftSec <= 60 ? 'rgba(200, 30, 30, 0.9)' : 'rgba(0, 0, 0, 0.7)';
+    leftSec <= warnSec ? 'rgba(200, 30, 30, 0.9)' : 'rgba(0, 0, 0, 0.7)';
 
   if (leftSec === 0) {
     // 0이 되면 갱신을 멈춘다.
@@ -76,9 +76,14 @@ async function start() {
   // 이용 중이 아니면 타이머를 띄우지 않는다
   if (!session || !session.sessionEndAt) return;
 
+  // 몇 초 전부터 빨갛게 할지는 config.js의 warnBeforeEndSec.
+  // timer.js는 유튜브 페이지 안에서 돌아서 config.js를 직접 못 읽는다.
+  // (읽게 하려면 manifest.json을 고쳐야 한다) 그래서 background가 같이 보내준다.
+  const warnSec = session.warnBeforeEndSec || 60;
+
   timerBox = createBox();
-  updateBox(session.sessionEndAt);
-  ticker = setInterval(() => updateBox(session.sessionEndAt), 1000);
+  updateBox(session.sessionEndAt, warnSec);
+  ticker = setInterval(() => updateBox(session.sessionEndAt, warnSec), 1000);
 }
 
 

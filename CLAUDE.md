@@ -80,7 +80,8 @@ background.js가 난수(0~100)를 뽑아 확률과 비교
 |---|---|
 | `manifest.json` | 확장 설정. 권한, background, options_page, action, content_scripts |
 | `rules.json` | 정적 차단 규칙. youtube.com(main_frame) → blocked.html |
-| `config.js` | **확률·시간 관련 모든 숫자의 공장 초기값.** + `devMode` |
+| `config.js` | **확률·시간 관련 모든 숫자의 공장 초기값.** + `devMode` + 화면·동작 세부값 |
+| `extension.css` | 차단 화면·설정 화면 공용 디자인 (Figma에서 가져옴). CSS 변수 + 다크 모드 |
 | `probability.js` | `calcProb(경과분, 사용분, 설정)` → 확률(%). 계산만 한다 |
 | `background.js` | 서비스 워커. 판정, 설정, 차단 해제/재차단, 알람, 저장 |
 | `blocked.html` / `blocked.js` | 차단 화면. 확률 표시, 시도, 이용 시간 정하기 |
@@ -228,8 +229,16 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 말썽이 생기면 이 줄만 `chrome.storage.local`로 바꾸면 된다.
 
 **주의**: `sync`는 쓰기 제한이 있다 (분당 120회, 시간당 1800회).
-`saveState()`는 판정할 때와 세션 시작·종료 때만 부른다.
-차단 화면이 1초마다 하는 건 **읽기뿐**이라 걸리지 않는다.
+- `saveState()`는 **바뀐 값만** 쓴다. 2초 재동기화가 같은 값을 계속 쓰면
+  시간당 1800회를 금방 넘기 때문 (2026-10-08 수정)
+- 2초마다 바뀌는 `lastSyncAt`은 `chrome.storage.local`(`LOCAL`)에 둔다
+- 통과 표(`passTicket`)는 `chrome.storage.session`(`TEMP`)에 둔다. 브라우저를 끄면 사라진다
+
+| 저장소 | 상수 | 들어가는 것 |
+|---|---|---|
+| `storage.sync` | `STORE` | 아래 표의 상태 + `settings` + `clientId` |
+| `storage.local` | `LOCAL` | `lastSyncAt` — 공유 서버와 마지막으로 맞춘 시각(ms) |
+| `storage.session` | `TEMP` | `passTicket` — 통과한 뒤 아직 시간을 안 고른 상태 |
 
 | 키 | 뜻 |
 |---|---|
@@ -237,10 +246,10 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 | `todayKey` | `'2026-09-19'` 형식. 날이 바뀌면 사용량 자동 초기화 |
 | `usedTodayMin` | 오늘 이미 쓴 시간(분) |
 | `sessionEndAt` | 이용 중이면 끝나는 시각(ms), 아니면 null |
-| `cooldownUntil` | **지금은 쓰지 않음.** 대기 시간을 없애면서 항상 null |
 | `settings` | 사용자 설정 한 덩어리 |
 | `clientId` | Supabase 기록에 붙이는 임의의 id. 공유 코드가 없을 때 쓴다 |
-| `lastSyncAt` | 공유 서버와 마지막으로 맞춘 시각(ms). 차단 화면에 표시 |
+
+옛 키 `cooldownUntil`(안 씀)과 sync에 있던 `lastSyncAt`은 `onInstalled`에서 지운다.
 
 **사용량은 세션이 끝날 때가 아니라 시작할 때 미리 차감한다.**
 끝날 때 빼면 20분을 받고 5분 만에 브라우저를 꺼버렸을 때 기록이 안 남는다.
@@ -332,8 +341,8 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 |---|---|---|
 | `GET_STATUS` | blocked.js (1초마다) | `buildStatus()` 결과 |
 | `ATTEMPT` | blocked.js | `{ passed, roll, prob, status }` |
-| `START_SESSION` `{minutes}` | blocked.js | `{ ok, endAt }` 또는 `{ ok:false, error }` |
-| `GET_SESSION` | timer.js | `{ sessionEndAt }` |
+| `START_SESSION` `{minutes}` | blocked.js | `{ ok, endAt }` 또는 `{ ok:false, error }`. **`passTicket`이 없으면 거절** |
+| `GET_SESSION` | timer.js | `{ sessionEndAt, warnBeforeEndSec }` |
 | `GET_SETTINGS` | options.js | `{ settings, rules, defaults }` |
 | `SET_SETTINGS` `{settings}` | options.js | `{ ok, settings }` 또는 `{ ok:false, errors:[] }` |
 | `SYNC_SHARED` | blocked.js (열 때 + 2초마다) | `{ sharing, ok, status }`. 서버 값을 받아 사본에 덮어씀 |
@@ -341,7 +350,12 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 | `DEV_SET_ELAPSED` / `DEV_SET_USED` | blocked.js (테스트) | 갱신된 status. 공유 중이면 서버에도 반영 |
 
 `buildStatus()`가 돌려주는 것: `elapsedMin` `usedTodayMin` `remainingMin`
-`cooldownLeftSec` `dailyLimit` `prob` `canAttempt` `sharing` `lastSyncAt`
+`dailyLimit` `inSession` `sessionEndAt` `prob` `canAttempt` `sharing` `lastSyncAt`
+
+`canAttempt`는 **남은 한도가 있고 이용 중이 아닐 때만** 참이다.
+이용 중에 또 통과하면 세션이 덮어써져 앞의 시간이 사라지기 때문.
+
+**처리 중 오류가 나도 답장은 간다**: `{ ok:false, error }`. 안 그러면 화면이 영원히 기다린다.
 
 > **함정 1**: `ATTEMPT`가 한도에 막히면 `{ passed:false, blocked:true, status }`가
 > 온다. 이때는 `roll`과 `prob`이 **없다.** `outcome.blocked`를 먼저 확인하지
@@ -349,6 +363,8 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 >
 > **함정 2**: `START_SESSION`은 실패할 수 있다. `result.ok`를 확인할 것.
 > background가 분 수를 다시 검사한다 (1분 미만, 남은 한도 초과는 거부).
+> 또 **`ATTEMPT`에서 통과해 받은 `passTicket`이 있어야만** 시작된다.
+> 없으면 콘솔에서 `START_SESSION`만 보내 판정을 건너뛸 수 있었다.
 
 ---
 
@@ -412,8 +428,6 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 - **유튜브는 SPA라 내부 이동이 `main_frame`으로 안 잡힌다.** 지금은 문제 없지만
   다른 사이트를 추가할 때 다시 볼 것.
 - **종료 1분 전 알림 미구현.** `timer.js`가 마지막 1분에 빨개지는 것까지만.
-- **`cooldownUntil` 상태값이 남아 있다.** 쓰지 않지만 배관은 그대로다.
-  대기 시간을 되살릴 일이 없으면 정리해도 된다.
 
 ---
 
@@ -425,7 +439,12 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 - `blocked.js`/`timer.js`에서 확률을 직접 계산하지 말 것.
   판정의 주인은 `background.js` 하나여야 한다.
 - **`secrets.js`를 커밋하지 말 것.** `service_role` 키는 어디에도 넣지 말 것.
-- 화면 꾸미기를 지금 하지 말 것. 나중에 한 번에 할 예정.
+- **CSS에서 `display:none`으로 요소를 숨기지 말 것.** JS가 `hidden` 속성으로 켜고 끈다.
+  CSS가 먼저 숨겨 버리면 `hidden=false`로 해도 안 나온다 (테스트 칸이 그렇게 사라졌었다)
+- **설정 화면 캔버스 높이를 CSS로 정하지 말 것.** JS가 그리는 크기와 달라지면
+  마우스 위치와 점 위치가 어긋나 끌기가 틀어진다
+- 캔버스 색은 JS에 적지 말고 `cssColor()`로 CSS 변수에서 읽을 것 (다크 모드 때문)
+- HTML의 **`id="..."`는 바꾸지 말 것.** JS가 id로 요소를 찾는다
 - 크롬 정책 레지스트리는 **하지 않기로 결정**했다. 다시 꺼내지 말 것.
 
 ---
@@ -507,14 +526,34 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 - README.md 전면 재작성 (처음 보는 사람용)
 - **확인됨**: 두 프로필에서 한도·기준 시각 공유 동작
 
+### 2026-09-28~10-07 [Claude Code]
+- **설정도 공유 코드로 동기화**: `shared_state.settings`(jsonb) + `set_shared_settings`.
+  서버에 설정이 없으면 이 기기 설정을 올리고, 있으면 받아온다
+- **Figma 디자인 적용**: `extension.css` 추가, `blocked.html`/`options.html` 구조 교체 (id 유지)
+  - 고친 것: CSS의 `#dev{display:none}` 제거, 캔버스 높이 CSS 지정 제거,
+    캔버스 색을 `cssColor()`로 CSS 변수에서 읽기
+- `attempts`/`sessions`에 `(client_id, created_at)` 색인 추가
+
+### 2026-10-08 [Claude Code] — 전체 코드 검토
+- **버그 수정**
+  - sync 쓰기 한도 초과 위험: 2초마다 같은 값을 다시 씀 → 바뀐 값만 쓰기, `lastSyncAt`은 local로
+  - 판정 우회: `START_SESSION`을 직접 보내면 통과 없이 열림 → `passTicket`
+  - 이용 중에 다시 통과하면 세션 덮어쓰기 → `inSession`이면 판정 안 함
+  - [기본값으로]가 공유 코드까지 지움 → 공유 코드는 유지
+  - background 오류 시 답장이 안 감 → `{ ok:false, error }` 답장
+  - 느린 네트워크에서 재동기화 요청이 겹침 → 묻는 중이면 건너뜀
+  - 판정 대기 중 화면 갱신이 버튼을 다시 켜던 틈 → 판정 중 갱신 정지
+- **정리**: 쿨타임 잔재 제거. 흩어진 숫자를 `config.js`로
+  (`defaultSessionMin` `warnBeforeEndSec` `dailyLimitAdvice` `askEverySec`
+  `resyncEverySec` `networkTimeoutMs`). options.js의 점 시간대·'보통' 프리셋은 `CONFIG.points`에서 가져옴
+
 ---
 
 ## 다음에 할 것
 
-1. **화면 꾸미기** ← 지금 여기. 디자인 AI에게 넘길 프롬프트를 만들어 둠
-   - **`id="..."` 속성은 절대 바꾸면 안 된다.** JS가 id로 요소를 찾는다.
-   - 결과물을 받으면 id가 전부 살아있는지, `<script>`가 그대로인지 확인할 것
-2. **웹 대시보드** (Vercel, 6~8차시) — 확장 안 통계는 이미 있음. 웹 버전은 별도 프로젝트
+1. **웹 대시보드** (Vercel, 6~8차시) ← 지금 여기. 확장 안 통계는 이미 있음
+   - 계획: `dashboard/` 폴더 + Vercel 서버 함수(`api/stats.js`)가 환경변수의 키로 `get_stats` 호출
+2. **`timer.js` 색을 디자인에 맞추기** — 아직 검정/빨강 rgba 그대로
 3. **종료 1분 전 알림** — `timer.js`가 빨개지는 것까지만 되어 있음
 4. **도메인 설정 일원화 / 차단 사이트 추가**
    - 1단계: `setAllowRule()`만 `config.js`를 읽게 (안전, 5분)

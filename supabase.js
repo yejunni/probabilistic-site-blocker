@@ -11,7 +11,8 @@
 
 // 응답이 없을 때 얼마나 기다릴지.
 // 판정 버튼을 누른 뒤 이만큼은 늦어질 수 있으므로 짧게 잡는다.
-const SUPABASE_TIMEOUT_MS = 3000;
+// 숫자는 config.js의 networkTimeoutMs. (background.js가 config.js를 먼저 불러온다)
+const SUPABASE_TIMEOUT_MS = CONFIG.networkTimeoutMs;
 
 
 // 주소를 쓸 수 있는 모양으로 다듬는다.

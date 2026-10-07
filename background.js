@@ -39,7 +39,19 @@ const SESSION_ALARM = 'sessionEnd';
 // (확장으로 막을 수 있는 한계가 여기까지다)
 //
 // sync가 말썽이면 이 한 줄만 local로 바꾸면 원래대로 돌아온다.
+//
+// ★ 주의: sync는 쓰기 횟수 제한이 있다 (시간당 1,800번, 분당 120번).
+//   넘으면 그 뒤로 모든 저장이 거부되어 판정이 멈춘다.
+//   그래서 자주 바뀌는 값은 여기 두지 않고, 쓸 때도 바뀐 것만 쓴다 (saveState 참고).
 const STORE = chrome.storage.sync;
+
+// 이 기기에만 있으면 되는 값. 쓰기 횟수 제한이 없다.
+// "마지막 동기화 시각"처럼 2초마다 바뀌는 값을 여기 둔다.
+const LOCAL = chrome.storage.local;
+
+// 브라우저를 끄면 사라지는 값. 확장 페이지에서만 읽을 수 있다.
+// "방금 통과했다"는 통과권을 여기 둔다 (startSession 참고).
+const TEMP = chrome.storage.session;
 
 
 // ─────────────────────────────────────────────────────────────
@@ -50,9 +62,7 @@ const DEFAULT_STATE = {
   waitStartAt: null,      // 확률 계산의 기준 시각(ms). 여기서부터 얼마나 지났는지를 잰다
   todayKey: '',           // '2026-09-07' 같은 날짜. 날이 바뀌면 사용량을 초기화하려고 둔다
   usedTodayMin: 0,        // 오늘 이미 쓴 시간(분)
-  sessionEndAt: null,     // 이용 중이면 끝나는 시각(ms), 아니면 null
-  cooldownUntil: null,    // 지금은 쓰지 않음 (거부 후 대기를 없앴다)
-  lastSyncAt: null        // 공유 서버와 마지막으로 맞춘 시각(ms). 화면에 표시용
+  sessionEndAt: null      // 이용 중이면 끝나는 시각(ms), 아니면 null
 };
 
 
@@ -143,14 +153,15 @@ async function pullShared() {
     return { sharing: true, ok: false };
   }
 
+  // saveState는 바뀐 값만 쓰므로, 서버 값이 그대로면 아무것도 쓰지 않는다.
   await saveState({
     usedTodayMin: Number(result.data.used_today_min) || 0,
     waitStartAt: result.data.wait_start_at === null
       ? null
       : Number(result.data.wait_start_at),
-    todayKey: getTodayKey(),
-    lastSyncAt: Date.now()
+    todayKey: getTodayKey()
   });
+  await markSynced();
 
   if (result.data.settings) {
     // 다른 기기가 올려둔 설정(곡선, 하루 한도 등)을 받아온다.
@@ -190,9 +201,20 @@ async function mergeSharedSettings(serverSettings) {
   const merged = { ...local, ...serverSettings, shareCode: local.shareCode };
   const checked = validateSettings(merged);
 
-  if (checked.ok) {
+  // 지금 설정과 똑같으면 쓰지 않는다. 2초마다 불리므로 매번 쓰면
+  // sync 쓰기 한도(시간당 1,800번)를 금방 넘긴다. saveState와 같은 이유.
+  if (checked.ok && !sameSettings(checked.settings, local)) {
     await STORE.set({ settings: checked.settings });
   }
+}
+
+
+// 두 설정이 내용상 같은지 본다. 항목마다 글자로 바꿔 비교한다.
+// (점 목록처럼 배열이 들어 있어서 === 로는 비교할 수 없다)
+function sameSettings(a, b) {
+  return Object.keys(SETTING_RULES).every(
+    key => JSON.stringify(a[key]) === JSON.stringify(b[key])
+  );
 }
 
 
@@ -205,18 +227,37 @@ async function pushWaitStart(waitStartAt) {
 
   const result = await pushSharedWaitStart(code, getTodayKey(), waitStartAt);
   if (result.ok) {
-    await saveState({ lastSyncAt: Date.now() });
+    await markSynced();
   }
 }
 
 
 // 바꾸고 싶은 값만 골라서 저장한다. (예: saveState({ usedTodayMin: 15 }))
 //
-// sync는 쓰기 횟수에 제한이 있다(분당 120회). 그래서 이 함수는
-// 판정할 때와 세션을 시작·종료할 때만 부른다.
-// 차단 화면이 1초마다 하는 건 읽기뿐이라 제한에 걸리지 않는다.
+// 지금 저장된 값과 똑같으면 쓰지 않는다.
+//
+// 왜 이렇게 하나: sync는 시간당 1,800번까지만 쓸 수 있다. 공유 중에는 차단 화면이
+// 2초마다 서버 값을 받아오는데, 그때마다 그냥 쓰면 시간당 1,800번을 넘겨서
+// 30분쯤 뒤부터 모든 저장이 거부된다(실제로 있던 버그). 서버 값은 대부분
+// 그대로이므로, 바뀐 것만 쓰면 실제 쓰기는 거의 일어나지 않는다.
 async function saveState(changes) {
-  await STORE.set(changes);
+  const current = await STORE.get(Object.keys(changes));
+
+  const changed = {};
+  for (const key of Object.keys(changes)) {
+    if (current[key] !== changes[key]) changed[key] = changes[key];
+  }
+
+  if (Object.keys(changed).length > 0) {
+    await STORE.set(changed);
+  }
+}
+
+
+// 서버와 방금 맞췄다고 표시한다. 차단 화면의 "마지막 동기화" 글자에 쓰인다.
+// 2초마다 바뀌는 값이라 sync가 아니라 local에 둔다.
+async function markSynced() {
+  await LOCAL.set({ lastSyncAt: Date.now() });
 }
 
 
@@ -500,29 +541,32 @@ async function buildStatus() {
   const elapsedMin = (now - state.waitStartAt) / 60000;
   const remainingMin = Math.max(settings.dailyLimit - state.usedTodayMin, 0);
 
-  // 쿨타임이 이미 지났으면 0초로 취급한다
-  const cooldownLeftSec = state.cooldownUntil
-    ? Math.max(Math.ceil((state.cooldownUntil - now) / 1000), 0)
-    : 0;
+  // 지금 유튜브를 보는 중인지.
+  // 이용 중에도 설정 화면의 "← 차단 화면" 링크로 이 화면에 올 수 있는데,
+  // 그때 또 통과하면 남은 이용 시간이 새 시간으로 덮여서 사라진다. 그래서 막는다.
+  const inSession = state.sessionEndAt !== null && state.sessionEndAt > now;
+
+  const { lastSyncAt } = await LOCAL.get('lastSyncAt');
 
   return {
     elapsedMin,
     usedTodayMin: state.usedTodayMin,
     remainingMin,
-    cooldownLeftSec,
     dailyLimit: settings.dailyLimit,
+    inSession,
+    sessionEndAt: state.sessionEndAt,
 
     // 차단 화면에 '마지막 동기화'를 띄우기 위한 값.
     // 공유가 꺼져 있으면 표시하지 않는다.
     sharing: (settings.shareCode || '').trim() !== '',
-    lastSyncAt: state.lastSyncAt || null,
+    lastSyncAt: lastSyncAt || null,
 
     // 실제 통과 확률 (probability.js가 계산).
     // 세 번째 인자로 설정을 넘겨야 사용자가 바꾼 곡선이 반영된다.
     prob: calcProb(elapsedMin, state.usedTodayMin, settings),
 
     // 버튼을 누를 수 있는 상태인지
-    canAttempt: remainingMin > 0 && cooldownLeftSec === 0
+    canAttempt: remainingMin > 0 && !inSession
   };
 }
 
@@ -545,7 +589,7 @@ async function attempt() {
 
   const status = await buildStatus();
 
-  // 한도가 없거나 쿨타임 중이면 판정 자체를 하지 않는다
+  // 한도가 없거나 이미 이용 중이면 판정 자체를 하지 않는다
   if (!status.canAttempt) {
     return { passed: false, blocked: true, status };
   }
@@ -555,16 +599,23 @@ async function attempt() {
   const roll = Math.random() * 100;
   const passed = roll < status.prob;
 
-  if (!passed) {
+  if (passed) {
+    // 통과권을 발급한다. startSession은 이게 있을 때만 유튜브를 열어준다.
+    //
+    // 이게 없으면 판정을 건너뛸 수 있다. 차단 화면에서 개발자 도구 콘솔에
+    // START_SESSION 메시지를 직접 보내면 주사위 없이 바로 열리기 때문이다.
+    await TEMP.set({ passTicket: true });
+
+  } else {
     // 거부: 기준 시각을 지금으로 되돌린다.
     // 확률이 0%부터 다시 자라므로 한 번 실패하면 처음부터 다시 기다려야 한다.
     //
     // 따로 대기 시간을 걸지 않는 이유:
     // 모든 곡선은 0분에서 정확히 0%다. 그래서 연타해도 "난수 < 0"이
     // 참이 되지 않아 어차피 계속 실패한다. 대기가 하는 일이 없었다.
-    // (cooldownUntil을 null로 지우는 건 예전에 저장된 값을 치우려는 것)
     const now = Date.now();
-    await saveState({ waitStartAt: now, cooldownUntil: null });
+    await saveState({ waitStartAt: now });
+    await TEMP.remove('passTicket');
 
     // 거부당한 사실을 서버에도 알린다.
     // 안 보내면 프로필을 바꿔서 거부를 없던 일로 만들 수 있다.
@@ -594,6 +645,12 @@ async function attempt() {
 
 // 시간을 고르고 나서. 차단을 풀고 알람을 맞춘다.
 async function startSession(minutes) {
+  // 방금 통과한 사람만 연다. 통과권은 attempt()가 통과했을 때 발급한다.
+  const { passTicket } = await TEMP.get('passTicket');
+  if (!passTicket) {
+    return { ok: false, error: '먼저 시도해서 통과해야 합니다' };
+  }
+
   const state = await loadState();
   const settings = await loadSettings();
   const remainingMin = Math.max(settings.dailyLimit - state.usedTodayMin, 0);
@@ -626,10 +683,9 @@ async function startSession(minutes) {
     if (result.ok && result.data.ok === false) {
       // 서버가 거절했다 = 다른 기기가 이미 한도를 써버렸다.
       // 받아온 값으로 사본을 맞춰두면 화면이 바로 정확해진다.
-      await saveState({
-        usedTodayMin: Number(result.data.used_today_min) || 0,
-        lastSyncAt: Date.now()
-      });
+      // 통과권은 남겨둔다. 시간을 줄여서 다시 시작할 수 있어야 하므로.
+      await saveState({ usedTodayMin: Number(result.data.used_today_min) || 0 });
+      await markSynced();
       return {
         ok: false,
         error: '다른 기기에서 한도를 이미 사용했습니다. 남은 시간을 다시 확인하세요'
@@ -639,7 +695,7 @@ async function startSession(minutes) {
     if (result.ok) {
       // 서버가 계산한 값을 쓴다. 서버가 진실이다.
       newUsedMin = Number(result.data.used_today_min) || newUsedMin;
-      await saveState({ lastSyncAt: Date.now() });
+      await markSynced();
     }
     // result.ok가 false면(인터넷 끊김 등) 로컬 계산으로 그냥 진행한다.
     // 인터넷 문제로 유튜브를 아예 못 쓰게 되는 게 더 나쁜 결과라서.
@@ -654,9 +710,11 @@ async function startSession(minutes) {
     sessionEndAt: endAt,
     // 사용량은 '끝날 때'가 아니라 '시작할 때' 미리 차감한다.
     // 도중에 브라우저를 꺼버려도 기록이 남게 하려는 것.
-    usedTodayMin: newUsedMin,
-    cooldownUntil: null
+    usedTodayMin: newUsedMin
   });
+
+  // 통과권은 한 번 쓰면 없앤다. 한 번 통과로 여러 번 열 수 없게.
+  await TEMP.remove('passTicket');
 
   // setTimeout 대신 alarms를 쓴다. 확장이 잠들어도 시간이 되면 깨워준다.
   chrome.alarms.create(SESSION_ALARM, { when: endAt });
@@ -680,8 +738,7 @@ async function endSession() {
   await saveState({
     sessionEndAt: null,
     // 여기가 핵심. 이용이 끝난 이 시각부터 다시 확률이 0%에서 자란다.
-    waitStartAt: now,
-    cooldownUntil: null
+    waitStartAt: now
   });
 
   // 다른 기기의 기준 시각도 같이 맞춘다
@@ -699,7 +756,7 @@ async function endSession() {
 // 기준 시각을 과거로 옮겨서 "이미 N분 기다린 것"으로 만든다.
 async function devSetElapsed(minutes) {
   const waitStartAt = Date.now() - minutes * 60000;
-  await saveState({ waitStartAt, cooldownUntil: null });
+  await saveState({ waitStartAt });
 
   // 공유가 켜져 있으면 서버도 같이 맞춘다.
   // 안 하면 몇 초 뒤 재동기화 때 서버의 진짜 값으로 되돌아가서
@@ -728,7 +785,12 @@ async function devSetUsed(minutes) {
 
 // blocked.js가 chrome.runtime.sendMessage로 보낸 요청을 여기서 받는다.
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  handleMessage(message).then(sendResponse);
+  // 처리 중에 오류가 나도 반드시 답장을 보낸다.
+  // 답장을 안 보내면 화면 쪽은 영원히 기다리다가 버튼이 먹통이 된다.
+  handleMessage(message).then(sendResponse, (error) => {
+    console.error('[background]', message.type, '처리 실패:', error);
+    sendResponse({ ok: false, error: '처리하지 못했습니다: ' + error.message });
+  });
 
   // true를 돌려줘야 "답장은 조금 뒤에 보낼게"라는 뜻이 된다.
   // 이걸 빼먹으면 답장이 안 간다.
@@ -751,10 +813,15 @@ async function handleMessage(message) {
       return { ...synced, status: await buildStatus() };
     }
 
-    // 유튜브 위에 뜨는 타이머(timer.js)가 "언제 끝나요?"라고 물어볼 때
+    // 유튜브 위에 뜨는 타이머(timer.js)가 "언제 끝나요?"라고 물어볼 때.
+    // 몇 초 전부터 빨갛게 할지도 같이 보낸다. timer.js는 유튜브 페이지 안에서
+    // 돌아서 config.js를 직접 읽을 수 없기 때문이다.
     case 'GET_SESSION': {
       const state = await loadState();
-      return { sessionEndAt: state.sessionEndAt };
+      return {
+        sessionEndAt: state.sessionEndAt,
+        warnBeforeEndSec: CONFIG.warnBeforeEndSec
+      };
     }
 
     // 옵션 화면이 열릴 때. 현재 설정과 함께 허용 범위표도 같이 보낸다.
@@ -847,3 +914,12 @@ async function reconcile() {
 
 chrome.runtime.onStartup.addListener(reconcile);
 chrome.runtime.onInstalled.addListener(reconcile);
+
+
+// 예전 버전이 sync에 남겨둔, 이제 쓰지 않는 값을 치운다.
+//   cooldownUntil - 거부 후 대기를 없앴다
+//   lastSyncAt    - 2초마다 바뀌어서 local로 옮겼다
+// 설치·업데이트(확장 새로고침 포함) 때 한 번만 돈다.
+chrome.runtime.onInstalled.addListener(() => {
+  STORE.remove(['cooldownUntil', 'lastSyncAt']);
+});

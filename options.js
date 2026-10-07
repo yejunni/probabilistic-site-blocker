@@ -18,11 +18,16 @@ let DEFAULTS = null;   // 공장 초기값 ([기본값으로] 버튼이 쓴다)
 
 
 // 하루 한도 권장 범위. 벗어나도 막지는 않고 색만 바꿔서 알려준다.
-const DAILY_LIMIT_ADVICE = { min: 30, max: 60 };
+// 숫자는 config.js의 dailyLimitAdvice에서 정한다.
+const DAILY_LIMIT_ADVICE = CONFIG.dailyLimitAdvice;
 
 
 // 점을 찍는 시간대. 이 시점들은 고정이고 높이(확률)만 조절한다.
-const POINT_TIMES = [10, 30, 45, 60, 80, 120];
+// config.js의 points에서 x만 뽑아온다. 여기 따로 적으면 둘이 어긋난다.
+const POINT_TIMES = CONFIG.points.map(point => point.x);
+
+// 기본 곡선의 점 높이. '보통' 프리셋과 'S자' 모양이 이 값을 그대로 쓴다.
+const DEFAULT_HEIGHTS = CONFIG.points.map(point => point.y);
 
 
 // 높이 6개만 적으면 {x, y} 목록으로 만들어 주는 도우미.
@@ -48,10 +53,11 @@ const PRESETS = {
     points: toPoints([9, 45, 75, 91, 95, 95]),
     maxProb: 95, dailyLimit: 120, usagePenalty: 0
   },
+  // '보통'은 config.js의 공장 초기값과 같다. 숫자를 두 번 적지 않으려고 거기서 가져온다.
   normal: {
-    midpoint: 60, steepness: 0.05,
-    points: toPoints([3, 14, 29, 48, 72, 85]),
-    maxProb: 85, dailyLimit: 60, usagePenalty: 0
+    midpoint: CONFIG.midpoint, steepness: CONFIG.steepness,
+    points: toPoints(DEFAULT_HEIGHTS),
+    maxProb: CONFIG.maxProb, dailyLimit: CONFIG.dailyLimit, usagePenalty: 0
   },
   strict: {
     midpoint: 120, steepness: 0.04,
@@ -64,8 +70,9 @@ const PRESETS = {
 // 점 잇기 곡선의 모양 자동 설정.
 // 시간대(x)는 그대로 두고 높이(y)만 바꾼다.
 // 순서는 config.js의 points 순서와 같다. (10 / 30 / 45 / 60 / 80 / 120분)
+// 주의: config.js에서 점 개수를 바꾸면 아래 목록들도 개수를 맞춰야 한다.
 const POINT_SHAPES = {
-  s:    [3, 14, 29, 48, 72, 85],   // 초반 느리고 중간에 급함 (기본값)
+  s:    DEFAULT_HEIGHTS,            // 초반 느리고 중간에 급함 (기본값)
   line: [7, 21, 32, 43, 57, 85],   // 일정한 속도로 오름
   log:  [15, 37, 48, 58, 69, 85],  // 초반에 확 오르고 완만해짐
   late: [1, 3, 8, 18, 45, 85]      // 한참 버티다 끝에 열림
@@ -175,7 +182,8 @@ function updateDailyLimitHint() {
   const minutes = Number(document.querySelector('[data-setting="dailyLimit"]').value);
   const hint = document.getElementById('dailyLimitHint');
 
-  const base = '30~60분을 권장합니다. 너무 넉넉하면 차단의 의미가 옅어지고, ' +
+  const base = `${DAILY_LIMIT_ADVICE.min}~${DAILY_LIMIT_ADVICE.max}분을 권장합니다. ` +
+               '너무 넉넉하면 차단의 의미가 옅어지고, ' +
                '너무 짧으면 답답해서 확장을 꺼 버리게 됩니다.';
 
   if (minutes < DAILY_LIMIT_ADVICE.min) {
@@ -709,8 +717,10 @@ function hookEvents() {
 
   document.getElementById('saveBtn').addEventListener('click', save);
 
+  // 공유 코드는 '설정값'이라기보다 '내 이름표'라서 기본값으로 되돌리지 않는다.
+  // 같이 지우면 저장하는 순간 다른 기기와의 연결이 몰래 끊긴다.
   document.getElementById('resetBtn').addEventListener('click', () => {
-    fillForm(DEFAULTS);
+    fillForm({ ...DEFAULTS, shareCode: collectForm().shareCode });
   });
 
   document.getElementById('statsRefreshBtn').addEventListener('click', loadStats);
