@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>확률 차단 기록</title>
+  <!-- 꾸미기는 나중에 한 번에 한다. 지금은 읽을 수 있을 정도만 -->
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 24px auto; padding: 0 16px; }
+    .cards { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0; }
+    .stat-card { flex: 1; min-width: 150px; border: 1px solid #ccc; border-radius: 8px; padding: 12px; }
+    .stat-card .big { font-size: 1.4em; font-weight: bold; margin: 4px 0; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border-bottom: 1px solid #ddd; padding: 6px; text-align: right; }
+    th:first-child, td:first-child { text-align: left; }
+    .warn { color: #c62828; }
+  </style>
+</head>
+<body>
+  <h1>확률 차단 기록</h1>
+  <p>확장 설정에 넣은 <b>공유 코드</b>를 입력하면 기록 요약을 볼 수 있습니다.</p>
+
+  <form id="codeForm">
+    <input id="codeInput" placeholder="공유 코드" autocomplete="off" required>
+    <button type="submit">불러오기</button>
+  </form>
+  <p id="message"></p>
+
+  <!-- 불러오기 전에는 숨겨 둔다. app.js가 hidden을 끈다 -->
+  <section id="result" hidden>
+    <div id="statsCards" class="cards"></div>
+
+    <h2>최근 7일</h2>
+    <table>
+      <thead>
+        <tr><th>날짜</th><th>시도</th><th>통과</th><th>이용 시간</th></tr>
+      </thead>
+      <tbody id="dailyBody"></tbody>
+    </table>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>

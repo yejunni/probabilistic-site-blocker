@@ -94,6 +94,8 @@ background.js가 난수(0~100)를 뽑아 확률과 비교
 | `supabase/stats.sql` | 통계 함수 `get_stats`. **2번째로 실행** |
 | `supabase/shared_state.sql` | 한도 공유 표 + 함수 4개. **3번째로 실행** (재실행해도 안전) |
 | `README.md` | 처음 보는 사람용 소개·설치 방법. CLAUDE.md는 AI용 작업 메모 |
+| `dashboard/index.html` / `app.js` | 웹 대시보드 화면. 공유 코드로 `/api/stats`에 묻고 그린다 |
+| `dashboard/api/stats.js` | Vercel 서버 함수. 환경변수(`SUPABASE_URL`, `SUPABASE_ANON_KEY`)의 키로 `get_stats` 호출 |
 
 ### 역할 분리 원칙
 - `probability.js` — **순수 계산만.** 저장·화면·난수 전부 금지.
