@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>확률 차단 기록</title>
+  <title>확률 기반 사이트 차단</title>
   <!-- 꾸미기는 나중에 한 번에 한다. 지금은 읽을 수 있을 정도만 -->
   <style>
     body { font-family: system-ui, sans-serif; max-width: 640px; margin: 24px auto; padding: 0 16px; }
@@ -17,7 +17,50 @@
   </style>
 </head>
 <body>
-  <h1>확률 차단 기록</h1>
+  <h1>확률 기반 사이트 차단</h1>
+  <p>
+    유튜브에 들어가면 바로 열어주지 않고 <b>확률로</b> 통과 여부를 정하는 크롬 확장 프로그램입니다.
+    오래 참을수록 통과 확률이 올라가고, 통과하면 하루 한도 안에서 고른 시간만큼만 볼 수 있습니다.
+  </p>
+
+  <h2>다운로드</h2>
+  <!-- zip은 GitHub Releases에 올려 둔다. 'latest' 주소라 새 버전을 올려도 이 링크는 그대로다.
+       zip에는 Supabase anon 키가 들어 있어서 저장소 코드에는 넣지 않았다 (tools/make_release.py 참고) -->
+  <p>
+    <a href="https://github.com/yejunni/probabilistic-site-blocker/releases/latest/download/probabilistic-site-blocker.zip">
+      확장 프로그램 받기 (.zip)
+    </a>
+  </p>
+
+  <h2>설치 방법</h2>
+  <ol>
+    <li>받은 zip 파일의 <b>압축을 풉니다.</b> <code>probabilistic-site-blocker</code> 폴더가 나옵니다.</li>
+    <li>크롬 주소창에 <code>chrome://extensions</code>를 입력합니다.</li>
+    <li>오른쪽 위 <b>개발자 모드</b>를 켭니다.</li>
+    <li><b>"압축해제된 확장 프로그램을 로드"</b>를 누르고 압축을 푼 폴더를 고릅니다.</li>
+  </ol>
+  <p>
+    크롬 웹 스토어를 거치지 않은 확장이라 개발자 모드가 필요합니다.
+    압축을 푼 폴더를 지우면 확장도 작동하지 않으니 남겨 두세요.
+  </p>
+
+  <h2>사용 방법</h2>
+  <ol>
+    <li>유튜브에 들어가면 <b>차단 화면</b>이 뜹니다. 기다린 시간에 따라 통과 확률이 올라갑니다.</li>
+    <li><b>[시도하기]</b>를 누르면 확률로 판정합니다.
+      <ul>
+        <li>통과: 1분 ~ 남은 한도 사이에서 볼 시간을 정하면 유튜브가 열립니다.
+          시간이 끝나면 다시 차단됩니다.</li>
+        <li>실패: 기다린 시간이 0으로 돌아갑니다. 한 번의 시도를 신중하게 하라는 뜻입니다.</li>
+      </ul>
+    </li>
+    <li>곡선 모양, 하루 한도 같은 설정은 주소창 오른쪽 <b>퍼즐 조각(🧩) → 확장 이름</b>이나
+      차단 화면의 <b>[설정]</b>에서 바꿉니다.</li>
+    <li>설정의 <b>공유 코드</b>에 나만 아는 코드를 넣으면, 다른 프로필·컴퓨터에서도
+      하루 한도와 기록이 하나로 묶입니다. 아래에서 그 코드로 기록도 볼 수 있습니다.</li>
+  </ol>
+
+  <h2>내 기록 보기</h2>
   <p>확장 설정에 넣은 <b>공유 코드</b>를 입력하면 기록 요약을 볼 수 있습니다.</p>
 
   <form id="codeForm">

@@ -96,6 +96,8 @@ background.js가 난수(0~100)를 뽑아 확률과 비교
 | `README.md` | 처음 보는 사람용 소개·설치 방법. CLAUDE.md는 AI용 작업 메모 |
 | `dashboard/index.html` / `app.js` | 웹 대시보드 화면. 공유 코드로 `/api/stats`에 묻고 그린다 |
 | `dashboard/api/stats.js` | Vercel 서버 함수. 환경변수(`SUPABASE_URL`, `SUPABASE_ANON_KEY`)의 키로 `get_stats` 호출 |
+| `tools/make_release.py` | 배포용 zip을 만든다. anon 키 확인 + 확장 파일만 + `devMode:false` |
+| `release/` | 만든 zip이 나오는 곳. **anon 키가 들어 있어 `.gitignore`에 있다** |
 
 ### 역할 분리 원칙
 - `probability.js` — **순수 계산만.** 저장·화면·난수 전부 금지.
@@ -551,10 +553,26 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 
 ---
 
+## 배포 (수행평가용)
+
+- 사이트: **https://probabilistic-site-blocker-dashboar.vercel.app** (Vercel, Root Directory = `dashboard`)
+  - 소개 / 다운로드 / 설치 방법 / 사용 방법 / 내 기록 보기
+  - `main`에 push하면 자동으로 다시 배포된다
+- 확장 zip은 **GitHub Releases**에 올린다. 사이트 버튼은
+  `releases/latest/download/probabilistic-site-blocker.zip`을 가리키므로 **파일 이름을 바꾸지 말 것**
+- **새 버전 내는 법**: `python tools/make_release.py` → GitHub Releases에 새 릴리스로 zip 업로드
+- **zip에 anon 키를 넣기로 함** (2026-10-26). 받은 사람도 기록·공유가 작동해야 해서.
+  위험: 받은 사람이 가짜 기록을 **넣을** 수는 있다. 읽기·삭제는 RLS로 막혀 있다.
+  스크립트가 `role=anon`이 아니면 멈춘다
+
+---
+
 ## 다음에 할 것
 
 1. **웹 대시보드** (Vercel, 6~8차시) ← 지금 여기. 확장 안 통계는 이미 있음
    - 계획: `dashboard/` 폴더 + Vercel 서버 함수(`api/stats.js`)가 환경변수의 키로 `get_stats` 호출
+   - **기록 삭제 기능** (사용자 요청, 나중에). 넣기만 허용한 구조라 security definer 함수로
+     "이 공유 코드의 기록만 지우기"를 만들어야 한다. 공유 코드가 비밀번호가 아니라는 점을 다시 따져볼 것
 2. **`timer.js` 색을 디자인에 맞추기** — 아직 검정/빨강 rgba 그대로
 3. **종료 1분 전 알림** — `timer.js`가 빨개지는 것까지만 되어 있음
 4. **도메인 설정 일원화 / 차단 사이트 추가**
