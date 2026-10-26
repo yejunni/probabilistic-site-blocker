@@ -5,6 +5,8 @@
 통과하면 하루 한도 안에서 원하는 만큼만 볼 수 있습니다.
 
 > 고등학교 정보과학 수업 프로젝트
+>
+> **소개·다운로드 사이트: https://probabilistic-site-blocker-dashboar.vercel.app**
 
 ---
 
@@ -33,6 +35,17 @@
   하루 한도와 기다린 시간을 함께 씁니다 (Supabase 연결 시)
 
 ## 설치
+
+### 그냥 써보기 (추천)
+
+1. [소개 사이트](https://probabilistic-site-blocker-dashboar.vercel.app) 또는
+   [Releases](https://github.com/yejunni/probabilistic-site-blocker/releases/latest)에서 zip을 받아 압축을 풉니다
+2. `chrome://extensions` → **개발자 모드** 켜기
+3. **압축해제된 확장 프로그램을 로드합니다** → 압축을 푼 폴더 선택
+
+이 zip에는 기록·공유 기능까지 켜져 있습니다 (Supabase `anon` 키 포함).
+
+### 코드로 설치하기 (직접 고치고 싶을 때)
 
 빌드 과정이 없습니다. 파일을 그대로 크롬에 올립니다.
 
@@ -81,6 +94,8 @@ Supabase 없이도 차단·판정·설정은 전부 동작합니다.
 | `supabase.js` | Supabase 통신 (기록·통계·공유) |
 | `supabase/*.sql` | 테이블과 함수 만드는 SQL |
 | `secrets.example.js` | Supabase 키를 넣는 틀 (`secrets.js`로 복사해서 사용) |
+| `dashboard/` | 소개·다운로드·기록 보기 웹사이트 (Vercel) |
+| `tools/make_release.py` | 배포용 zip 만들기 (`python tools/make_release.py`) |
 
 ## 기술 메모
 
