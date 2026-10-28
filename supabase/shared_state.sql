@@ -211,39 +211,13 @@ $$;
 
 
 -- ─────────────────────────────────────────────────────────────
--- 5) 사용량 직접 지정 — 테스트 전용
+-- 5) 예전 테스트용 함수 지우기 (2026-10-28)
 --
--- config.js의 devMode가 켜져 있을 때, 차단 화면 맨 아래 테스트 칸에서
--- "오늘 사용 N분으로 적용"을 누르면 이 함수가 불린다.
---
--- consume_minutes는 '더하기'만 하고 한도를 넘으면 거부하지만,
--- 테스트는 값을 통째로 바꿔치기해야 하므로 별도 함수로 뒀다.
--- devMode가 꺼진 실제 사용에서는 background.js가 이 요청 자체를 막아서
--- 호출되지 않는다. (다만 이 함수 자체는 anon 키만 있으면 부를 수 있어서,
--- 공유 코드를 아는 사람이 남의 사용량을 마음대로 바꿀 수 있다는 위험은
--- 남아 있다. shareCode 자체가 비밀번호가 아니라는 기존 방침과 같은 수준이다)
+-- 테스트 칸에서 오늘 사용량을 통째로 바꾸던 dev_set_used_minutes를 없앴다.
+-- 공유 코드만 알면 남의 사용량을 0으로 되돌릴 수 있는 구멍이었다.
+-- 예전에 이 파일을 실행한 DB에는 함수가 남아 있으므로 여기서 지운다.
 -- ─────────────────────────────────────────────────────────────
-create or replace function public.dev_set_used_minutes(
-  p_client_id     text,
-  p_today_key     text,
-  p_used_today_min real
-)
-returns json
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  insert into public.shared_state (client_id, today_key, used_today_min)
-  values (p_client_id, p_today_key, p_used_today_min)
-  on conflict (client_id) do update
-    set today_key      = p_today_key,
-        used_today_min = p_used_today_min,
-        updated_at     = now();
-
-  return json_build_object('used_today_min', p_used_today_min);
-end;
-$$;
+drop function if exists public.dev_set_used_minutes(text, text, real);
 
 
 -- anon 키로는 이 함수들만 부를 수 있다. 표는 계속 막혀 있다.
@@ -251,10 +225,8 @@ revoke all on function public.sync_state(text, text)                    from pub
 revoke all on function public.consume_minutes(text, text, int, int)     from public;
 revoke all on function public.set_wait_start(text, text, bigint)        from public;
 revoke all on function public.set_shared_settings(text, text, jsonb)    from public;
-revoke all on function public.dev_set_used_minutes(text, text, real)    from public;
 
 grant execute on function public.sync_state(text, text)                 to anon;
 grant execute on function public.consume_minutes(text, text, int, int)  to anon;
 grant execute on function public.set_wait_start(text, text, bigint)     to anon;
 grant execute on function public.set_shared_settings(text, text, jsonb) to anon;
-grant execute on function public.dev_set_used_minutes(text, text, real) to anon;

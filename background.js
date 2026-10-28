@@ -273,7 +273,7 @@ async function markSynced() {
 // ─────────────────────────────────────────────────────────────
 
 // 사용자가 바꿀 수 있는 항목과 허용 범위.
-// 여기 없는 항목(devMode 등)은 옵션 화면에서 못 바꾼다.
+// 여기 없는 항목(화면·동작 세부값 등)은 옵션 화면에서 못 바꾼다.
 //
 // 옵션 화면도 이 표를 받아가서 슬라이더의 min/max를 정한다.
 // 범위를 두 군데 적어두면 언젠가 어긋나기 때문이다.
@@ -749,37 +749,6 @@ async function endSession() {
 
 
 // ─────────────────────────────────────────────────────────────
-// 테스트용 (나중에 지울 부분)
-// ─────────────────────────────────────────────────────────────
-
-// 80분 확률을 보려고 진짜 80분을 기다릴 수는 없으니,
-// 기준 시각을 과거로 옮겨서 "이미 N분 기다린 것"으로 만든다.
-async function devSetElapsed(minutes) {
-  const waitStartAt = Date.now() - minutes * 60000;
-  await saveState({ waitStartAt });
-
-  // 공유가 켜져 있으면 서버도 같이 맞춘다.
-  // 안 하면 몇 초 뒤 재동기화 때 서버의 진짜 값으로 되돌아가서
-  // 테스트로 바꾼 게 없던 일이 된다. (pushWaitStart는 공유가 꺼져 있으면
-  // 알아서 아무 일도 안 한다)
-  await pushWaitStart(waitStartAt);
-}
-
-// 오늘 사용량을 원하는 값으로 바꾼다. 사용량 보정이 걸리는지 확인용.
-async function devSetUsed(minutes) {
-  await saveState({ usedTodayMin: minutes });
-
-  // 공유가 켜져 있으면 서버 값도 같이 지정한다. consume_minutes는
-  // '더하기'만 할 수 있어서 테스트용으로 값을 통째로 지정하는
-  // 별도 함수(dev_set_used_minutes)를 하나 더 뒀다.
-  const code = await getShareCode();
-  if (code) {
-    await devSetSharedUsed(code, getTodayKey(), minutes);
-  }
-}
-
-
-// ─────────────────────────────────────────────────────────────
 // 차단 화면과 대화하기
 // ─────────────────────────────────────────────────────────────
 
@@ -848,19 +817,6 @@ async function handleMessage(message) {
 
     case 'START_SESSION':
       return await startSession(message.minutes);
-
-    // 아래 두 개는 테스트용. CONFIG.devMode가 꺼져 있으면 무시한다.
-    // 화면에서 버튼을 숨기는 것과 별개로, 요청 자체도 막아둬야
-    // 콘솔에서 직접 보내는 식으로 한도를 늘릴 수 없다.
-    case 'DEV_SET_ELAPSED':
-      if (!CONFIG.devMode) return { error: '테스트 모드가 꺼져 있습니다' };
-      await devSetElapsed(message.minutes);
-      return await buildStatus();
-
-    case 'DEV_SET_USED':
-      if (!CONFIG.devMode) return { error: '테스트 모드가 꺼져 있습니다' };
-      await devSetUsed(message.minutes);
-      return await buildStatus();
 
     default:
       return { error: '알 수 없는 요청: ' + message.type };

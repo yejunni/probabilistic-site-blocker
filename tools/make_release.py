@@ -7,8 +7,6 @@
 # 하는 일
 #   1. secrets.js의 키가 anon 키인지 확인한다 (service_role이면 멈춘다)
 #   2. 확장에 필요한 파일만 골라 담는다 (dashboard, supabase, 메모 파일은 뺀다)
-#   3. 담을 때 config.js의 devMode를 false로 바꾼다 (테스트 칸이 안 보이게)
-#      내 컴퓨터의 config.js는 그대로 둔다. 나는 계속 테스트해야 하므로.
 #
 # 주의: 만들어진 zip에는 Supabase anon 키가 들어 있다.
 #       release/ 폴더는 .gitignore에 있어 저장소에 올라가지 않는다.
@@ -86,15 +84,6 @@ def check_key():
         stop(f'anon 키가 아닙니다 (role={role}). 절대 배포하면 안 됩니다.')
 
 
-# devMode: true 를 false로 바꾼 config.js 내용을 돌려준다.
-def config_for_release():
-    text = (ROOT / 'config.js').read_text(encoding='utf-8')
-    changed, count = re.subn(r'devMode:\s*true', 'devMode: false', text)
-    if count == 0 and 'devMode: false' not in text:
-        stop('config.js에서 devMode를 찾지 못했습니다.')
-    return changed
-
-
 def main():
     check_key()
 
@@ -107,14 +96,10 @@ def main():
 
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
         for name in EXTENSION_FILES:
-            target = f'{FOLDER_IN_ZIP}/{name}'
-            if name == 'config.js':
-                zf.writestr(target, config_for_release())
-            else:
-                zf.write(ROOT / name, target)
+            zf.write(ROOT / name, f'{FOLDER_IN_ZIP}/{name}')
 
     print('만들었습니다:', zip_path)
-    print('파일', len(EXTENSION_FILES), '개, devMode=false, anon 키 확인됨')
+    print('파일', len(EXTENSION_FILES), '개, anon 키 확인됨')
 
 
 main()

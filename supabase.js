@@ -202,19 +202,6 @@ async function setSharedSettings(clientId, todayKey, settings) {
 }
 
 
-// 테스트 전용. 오늘 사용량을 통째로 지정한다.
-// consume_minutes는 '더하기'만 하고 한도를 넘으면 거부하므로,
-// 테스트 칸에서 값을 통째로 바꿔치기하려면 이 함수가 따로 필요하다.
-// devMode가 꺼져 있으면 background.js가 이 요청 자체를 막는다.
-async function devSetSharedUsed(clientId, todayKey, minutes) {
-  return callFunction('dev_set_used_minutes', {
-    p_client_id: clientId,
-    p_today_key: todayKey,
-    p_used_today_min: minutes
-  });
-}
-
-
 // [시도하기]를 누를 때마다 한 줄. 통과/거부 모두 남긴다.
 async function logAttempt(row) {
   return insertRow('attempts', row);

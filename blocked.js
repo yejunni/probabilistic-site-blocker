@@ -338,30 +338,6 @@ document.getElementById('startBtn').addEventListener('click', async () => {
 });
 
 
-// ─────────────────────────────────────────────────────────────
-// 테스트용
-// config.js의 devMode가 false면 이 칸이 통째로 사라진다.
-// 코드를 지울 필요 없이 그 한 줄만 바꾸면 된다.
-// ─────────────────────────────────────────────────────────────
-
-if (CONFIG.devMode) {
-  document.getElementById('devElapsedBtn').addEventListener('click', async () => {
-    const minutes = Number(document.getElementById('devElapsed').value);
-    const status = await ask({ type: 'DEV_SET_ELAPSED', minutes: minutes });
-    render(status);
-  });
-
-  document.getElementById('devUsedBtn').addEventListener('click', async () => {
-    const minutes = Number(document.getElementById('devUsed').value);
-    const status = await ask({ type: 'DEV_SET_USED', minutes: minutes });
-    render(status);
-  });
-
-} else {
-  document.getElementById('dev').hidden = true;
-}
-
-
 // 서버와 맞추고 화면을 다시 그린다.
 // 화면이 열릴 때, 그리고 RESYNC_EVERY_SEC마다 이걸 부른다.
 // 공유 코드가 비어 있으면 background가 알아서 건너뛴다.

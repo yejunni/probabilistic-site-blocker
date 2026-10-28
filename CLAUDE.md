@@ -42,9 +42,8 @@
 **오류 확인**: `chrome://extensions`에서 **"서비스 워커"** 링크를 누르면
 `background.js` 전용 콘솔이 열린다. Supabase 관련 경고는 `[supabase]`로 시작한다.
 
-**시간 건너뛰기**: 차단 화면 맨 아래 테스트 칸에서 경과 시간과 오늘 사용량을
-강제로 설정할 수 있다. `config.js`의 **`devMode`** 로 켜고 끈다.
-제출할 때 `false`로 바꾸면 칸이 사라지고 요청 자체도 무시된다.
+**테스트 칸(`devMode`)은 없앴다** (2026-10-28). 80분 확률을 보려면 설정 화면의
+곡선 미리보기를 보거나, `probability.js`의 `calcProb`를 콘솔에서 직접 부르면 된다.
 
 ---
 
@@ -81,7 +80,7 @@ background.js가 난수(0~100)를 뽑아 확률과 비교
 |---|---|
 | `manifest.json` | 확장 설정. 권한, background, options_page, action, content_scripts |
 | `rules.json` | 정적 차단 규칙. youtube.com(main_frame) → blocked.html |
-| `config.js` | **확률·시간 관련 모든 숫자의 공장 초기값.** + `devMode` + 화면·동작 세부값 |
+| `config.js` | **확률·시간 관련 모든 숫자의 공장 초기값.** + 화면·동작 세부값 |
 | `extension.css` | 차단 화면·설정 화면 공용 디자인 (Figma에서 가져옴). CSS 변수 + 다크 모드 |
 | `probability.js` | `calcProb(경과분, 사용분, 설정)` → 확률(%). 계산만 한다 |
 | `background.js` | 서비스 워커. 판정, 설정, 차단 해제/재차단, 알람, 저장 |
@@ -93,11 +92,11 @@ background.js가 난수(0~100)를 뽑아 확률과 비교
 | `secrets.js` | **실제 키. `.gitignore`에 있어 저장소에 없다** |
 | `supabase/schema.sql` | 기록 테이블(attempts/sessions) + RLS. **1번째로 실행** |
 | `supabase/stats.sql` | 통계 함수 `get_stats`. **2번째로 실행** |
-| `supabase/shared_state.sql` | 한도 공유 표 + 함수 4개. **3번째로 실행** (재실행해도 안전) |
+| `supabase/shared_state.sql` | 한도 공유 표 + 함수 4개 + 옛 테스트 함수 삭제. **3번째로 실행** (재실행해도 안전) |
 | `README.md` | 처음 보는 사람용 소개·설치 방법. CLAUDE.md는 AI용 작업 메모 |
 | `dashboard/index.html` / `app.js` | 웹 대시보드 화면. 공유 코드로 `/api/stats`에 묻고 그린다 |
 | `dashboard/api/stats.js` | Vercel 서버 함수. 환경변수(`SUPABASE_URL`, `SUPABASE_ANON_KEY`)의 키로 `get_stats` 호출 |
-| `tools/make_release.py` | 배포용 zip을 만든다. anon 키 확인 + 확장 파일만 + `devMode:false` |
+| `tools/make_release.py` | 배포용 zip을 만든다. anon 키 확인 + 확장 파일만 |
 | `release/` | 만든 zip이 나오는 곳. **anon 키가 들어 있어 `.gitignore`에 있다** |
 
 ### 역할 분리 원칙
@@ -314,7 +313,6 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 | **`시도하기` 직전** | 읽기 | `sync_state` |
 | 거부당했을 때 / 이용이 끝났을 때 | 쓰기 | `set_wait_start` |
 | 유튜브 열 때(시간 정할 때) | 쓰기 | `consume_minutes` |
-| (테스트 전용) 사용량 강제 지정 | 쓰기 | `dev_set_used_minutes` |
 
 - **차감은 DB 함수 안에서 한다.** 기기 A·B가 거의 동시에 시작하면 둘 다 같은 값을 읽고
   각자 더해 써서 한 쪽 차감이 사라진다. 줄을 잠그고 처리하면 끼어들 틈이 없다.
@@ -331,10 +329,9 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 `shared_state`를 잠가둔 지금 구조에서 쓰려면 읽기를 열어야 해서 "남의 표를 훔쳐볼 수 없게"
 막아둔 설계가 무너진다. 2초 폴링이면 사람 눈엔 즉각이라 그 비용을 치르지 않았다.
 
-**테스트 도구와 공유가 충돌한 적이 있다**: 테스트 칸(`DEV_SET_*`)이 로컬만 바꾸면 2초 뒤
-재동기화가 서버 값으로 덮어써서 테스트가 무효가 된다. 그래서 공유 중이면 서버에도 같이
-반영한다. (`dev_set_used_minutes`는 값을 통째로 지정하므로 `shareCode`를 아는 사람이
-남의 사용량을 바꿀 수 있다. 공유 코드가 비밀번호가 아니라는 기존 방침과 같은 수준의 위험)
+**테스트 도구는 없앴다**: 예전 테스트 칸은 `dev_set_used_minutes`로 서버 사용량을 통째로
+바꿨는데, 공유 코드만 알면 남의 사용량을 0으로 되돌릴 수 있는 구멍이었다.
+`shared_state.sql`이 이제 이 함수를 `drop`한다.
 
 ---
 
@@ -352,7 +349,6 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 | `SET_SETTINGS` `{settings}` | options.js | `{ ok, settings }` 또는 `{ ok:false, errors:[] }` |
 | `SYNC_SHARED` | blocked.js (열 때 + 2초마다) | `{ sharing, ok, status }`. 서버 값을 받아 사본에 덮어씀 |
 | `GET_STATS` `{timeZone}` | options.js | `{ ok, data, recordId }`. 오늘/7일/전체 + 일별 |
-| `DEV_SET_ELAPSED` / `DEV_SET_USED` | blocked.js (테스트) | 갱신된 status. 공유 중이면 서버에도 반영 |
 
 `buildStatus()`가 돌려주는 것: `elapsedMin` `usedTodayMin` `remainingMin`
 `dailyLimit` `inSession` `sessionEndAt` `prob` `canAttempt` `sharing` `lastSyncAt`
@@ -582,6 +578,12 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
     → Settings → Deployment Protection에서 Standard 또는 Disabled로 (팀 `dshs1` 권한 확인 필요)
 - README에 사이트·다운로드 안내 추가
 
+### 2026-10-28 [Claude Code]
+- **테스트 칸 완전 제거**: `devMode`, 차단 화면 `#dev` 칸, `DEV_SET_*` 메시지,
+  `devSetElapsed`/`devSetUsed`/`devSetSharedUsed`, CSS, `dev_set_used_minutes` SQL 함수
+  - SQL은 `drop function if exists`로 바꿔, 이미 만든 DB에서도 지워지게 함
+  - `make_release.py`의 devMode 바꾸기 단계도 필요 없어져 제거
+
 ---
 
 ## 보고서용 요약
@@ -621,9 +623,7 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 
 ## 다음에 할 것
 
-1. **웹 대시보드** (Vercel, 6~8차시) ← 지금 여기. 확장 안 통계는 이미 있음
-   - 계획: `dashboard/` 폴더 + Vercel 서버 함수(`api/stats.js`)가 환경변수의 키로 `get_stats` 호출
-   - **기록 삭제 기능** (사용자 요청, 나중에). 넣기만 허용한 구조라 security definer 함수로
+1. **기록 삭제 기능** (사용자 요청, 나중에). 넣기만 허용한 구조라 security definer 함수로
      "이 공유 코드의 기록만 지우기"를 만들어야 한다. 공유 코드가 비밀번호가 아니라는 점을 다시 따져볼 것
 2. **`timer.js` 색을 디자인에 맞추기** — 아직 검정/빨강 rgba 그대로
 3. **종료 1분 전 알림** — `timer.js`가 빨개지는 것까지만 되어 있음
@@ -632,6 +632,5 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
    - 2단계: `rules.json`을 동적 규칙으로, `content_scripts`를 `chrome.scripting`으로
 5. **`manifest.json`의 `version`이 아직 `0.1`** — 릴리스는 `v1.0`. 맞추려면 물어보고 고칠 것
 6. **제출 전 점검**
-   - `config.js`의 `devMode`를 `false`로 (테스트 칸이 사라지고 요청도 막힌다)
-   - `dev_set_used_minutes` 함수는 SQL에 남아 있다. 필요하면 Supabase에서 지울 것
+   - Vercel 대표 주소가 시크릿 창에서 로그인 없이 열리는지
    - README에 스크린샷 추가

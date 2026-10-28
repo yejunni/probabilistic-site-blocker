@@ -449,38 +449,6 @@ input[type="radio"] {
   color: var(--accent-strong);
 }
 
-/*
-  테스트 칸. 여기서 display를 정하지 않는다.
-  보일지 말지는 config.js의 devMode를 보고 blocked.js가 hidden으로 정한다.
-*/
-#dev {
-  margin-top: 26px;
-  padding-top: 16px;
-  border-top: 1px dashed var(--line-strong);
-  color: var(--muted);
-  font-size: 12px;
-}
-
-#dev > p {
-  margin: 0 0 8px;
-  font-weight: 700;
-}
-
-#dev label {
-  margin: 0 4px;
-}
-
-#dev input {
-  width: 58px;
-  padding: 5px;
-}
-
-#dev button {
-  min-height: 32px;
-  padding: 4px 9px;
-  font-size: 11px;
-}
-
 /* ─────────────────────────────────────────────────────────────
    설정 화면
    ───────────────────────────────────────────────────────────── */
@@ -947,10 +915,6 @@ code {
 
   #info {
     font-size: 11px;
-  }
-
-  #dev {
-    line-height: 2.8;
   }
 
   .options-page {
