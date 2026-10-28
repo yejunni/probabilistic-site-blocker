@@ -202,6 +202,16 @@ async function setSharedSettings(clientId, todayKey, settings) {
 }
 
 
+// 오늘의 찬스를 쓴다고 서버에 적는다. 이미 썼으면 data.ok가 false로 온다.
+// 주사위를 굴리기 전에 부른다 (shared_state.sql의 use_chance 설명 참고).
+async function claimSharedChance(clientId, todayKey) {
+  return callFunction('use_chance', {
+    p_client_id: clientId,
+    p_today_key: todayKey
+  });
+}
+
+
 // [시도하기]를 누를 때마다 한 줄. 통과/거부 모두 남긴다.
 async function logAttempt(row) {
   return insertRow('attempts', row);

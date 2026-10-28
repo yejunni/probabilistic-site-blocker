@@ -9,6 +9,9 @@ const infoEl = document.getElementById('info');
 const attemptBtn = document.getElementById('attemptBtn');
 const resultEl = document.getElementById('result');
 const durationsEl = document.getElementById('durations');
+const chanceBtn = document.getElementById('chanceBtn');
+const chanceInfoEl = document.getElementById('chanceInfo');
+const chanceResultEl = document.getElementById('chanceResult');
 
 // 1초마다 화면을 새로 그리는 타이머.
 // 이게 없으면 화면을 연 순간의 확률이 그대로 멈춰 있게 된다.
@@ -68,6 +71,7 @@ function render(status) {
     ` · ${status.remainingMin}분 남음`;
 
   renderSyncInfo(status);
+  renderChance(status);
 
   if (status.remainingMin <= 0) {
     // 한도를 다 썼으면 판정 자체를 안 한다
@@ -84,6 +88,29 @@ function render(status) {
     attemptBtn.disabled = false;
     attemptBtn.textContent = '시도하기';
   }
+}
+
+
+// 오늘의 찬스 칸. 누를 수 있는지는 background가 정한 canChance를 그대로 따른다.
+function renderChance(status) {
+  // background가 예전 코드면 찬스 값이 안 온다. 확장 ↻ 없이 차단 화면만 F5 했을 때.
+  if (status.chanceProb === undefined) {
+    chanceInfoEl.textContent = '확장을 새로고침(↻)해 주세요';
+    chanceBtn.disabled = true;
+    return;
+  }
+
+  chanceInfoEl.textContent =
+    `하루 한 번, 기다린 시간과 상관없이 ${status.chanceProb}% 확률로 ${status.chanceMinutes}분`;
+
+  // 통과해서 시간을 고르는 중이면 잠근다. 늦게 도착한 동기화 응답이 render()를 불러도
+  // 다시 켜지지 않게. (켜지면 통과권을 찬스가 먼저 써버릴 수 있다)
+  chanceBtn.disabled = !status.canChance || !durationsEl.hidden;
+
+  if (status.chanceUsed)          chanceBtn.textContent = '오늘은 이미 썼습니다';
+  else if (status.inSession)      chanceBtn.textContent = '이용 중입니다';
+  else if (status.remainingMin <= 0) chanceBtn.textContent = '오늘 한도를 다 썼습니다';
+  else                            chanceBtn.textContent = '찬스 쓰기';
 }
 
 
@@ -176,6 +203,7 @@ attemptBtn.addEventListener('click', async () => {
   // 갱신도 잠깐 멈춘다. 안 그러면 판정을 기다리는 사이 render()가
   // 버튼을 다시 켜서, 그 틈에 한 번 더 누를 수 있다.
   attemptBtn.disabled = true;
+  chanceBtn.disabled = true;   // 판정이 두 개 동시에 돌지 않게
   stopTicking();
 
   let outcome;
@@ -208,8 +236,10 @@ attemptBtn.addEventListener('click', async () => {
     resultEl.className = 'pass';
 
     attemptBtn.hidden = true;
+    chanceBtn.disabled = true;   // 시간을 고르는 중에는 찬스도 못 쓴다
     stopTicking();   // 시간 선택 화면에서는 갱신을 멈춘다
     showDurationPicker(outcome.status.remainingMin);
+    loadTodayStats();
 
   } else {
     resultEl.textContent =
@@ -219,6 +249,43 @@ attemptBtn.addEventListener('click', async () => {
     // 경과 시간이 0으로 초기화된 최신 상태를 받아 다시 그린다
     render(outcome.status);
     startTicking();
+    loadTodayStats();
+  }
+});
+
+
+// [찬스 쓰기]. 판정은 background가 하고, 여기서는 결과만 보여준다.
+chanceBtn.addEventListener('click', async () => {
+  chanceBtn.disabled = true;
+  attemptBtn.disabled = true;   // 판정이 두 개 동시에 돌지 않게
+  stopTicking();
+
+  let outcome;
+  try {
+    outcome = await ask({ type: 'CHANCE' });
+  } catch (e) {
+    outcome = null;
+  }
+
+  if (!outcome || outcome.ok === false) {
+    chanceResultEl.textContent = (outcome && outcome.error) || '찬스를 쓰지 못했습니다. 화면을 새로고침(F5) 해주세요';
+    chanceResultEl.className = 'fail';
+    if (outcome && outcome.status) render(outcome.status);
+    startTicking();
+
+  } else if (outcome.passed) {
+    // 당첨이면 background가 이미 차단을 풀었다. 결과를 잠깐 보여주고 유튜브로 보낸다
+    chanceResultEl.textContent = `당첨! ${outcome.minutes}분이 열렸습니다`;
+    chanceResultEl.className = 'pass';
+    attemptBtn.hidden = true;
+    setTimeout(() => { location.href = 'https://www.youtube.com'; }, 1500);
+
+  } else {
+    chanceResultEl.textContent = '꽝! 기다린 시간은 그대로입니다';
+    chanceResultEl.className = 'fail';
+    render(outcome.status);
+    startTicking();
+    loadTodayStats();
   }
 });
 
@@ -356,9 +423,40 @@ async function syncAndRefresh() {
 }
 
 
+// ─────────────────────────────────────────────────────────────
+// 오늘 기록 (화면 아래 칸)
+// ─────────────────────────────────────────────────────────────
+
+// Supabase에서 오늘 요약과 최근 7일을 받아와 그린다.
+//
+// 1초 갱신(ticker)에는 넣지 않는다. 이건 네트워크를 타는데, 숫자가 바뀌는 건
+// [시도하기]를 눌렀을 때뿐이라 그때만 다시 받으면 충분하다.
+async function loadTodayStats() {
+  let result;
+  try {
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    result = await ask({ type: 'GET_STATS', timeZone: timeZone });
+  } catch (e) {
+    return;
+  }
+
+  // secrets.js가 없거나 인터넷이 끊긴 경우. 칸을 숨긴 채로 둔다.
+  // 차단 화면의 본래 일(확률·시도)에는 영향이 없어야 하므로 오류 문구도 안 띄운다.
+  if (!result || !result.ok) return;
+
+  const cards = document.getElementById('statsCards');
+  cards.innerHTML = '';
+  addStatCard(cards, '오늘', result.data.today);
+  renderDailyTable(result.data.daily || []);
+
+  document.getElementById('blockedStats').hidden = false;
+}
+
+
 async function start() {
   await syncAndRefresh();
   startTicking();
+  loadTodayStats();   // 기다리지 않는다. 늦게 와도 확률 표시는 먼저 뜨게
 }
 
 start();

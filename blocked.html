@@ -12,6 +12,11 @@
     id="..."는 blocked.js가 요소를 찾는 이름이다. 디자인을 바꿀 때도
     id는 절대 바꾸거나 지우지 말 것. 하나만 바뀌어도 버튼이 먹통이 된다.
   -->
+  <!--
+    blocked-layout: 확률 카드를 화면 정중앙에 두고, 오른쪽 빈 공간에 기록을 놓는 틀.
+    기록이 늦게 떠도 카드가 옆으로 밀리지 않게 칸을 미리 나눠 둔다.
+  -->
+  <div class="blocked-layout">
   <main class="blocked-shell">
     <div class="blocked-brandbar">
       <span class="yj-mark" aria-label="YJ">YJ</span>
@@ -59,11 +64,43 @@
     <div class="settings-row">
       <button id="settingsBtn">설정</button>
     </div>
-
   </main>
+
+    <!--
+      오늘의 찬스. 넓은 화면에서는 확률 카드 왼쪽, 좁은 화면에서는 카드 아래에 온다.
+      확률·시간 숫자는 blocked.js가 background에서 받아 채운다 (config.js의 chanceProb, chanceMinutes)
+    -->
+    <aside id="chanceBox" class="chance-box">
+      <h3 class="table-title">오늘의 찬스</h3>
+      <p id="chanceInfo">하루 한 번</p>
+      <button id="chanceBtn" disabled>찬스 쓰기</button>
+      <p id="chanceResult"></p>
+    </aside>
+
+    <!--
+      오늘 기록 + 최근 7일. Supabase에서 받아오므로 연결이 안 되면
+      blocked.js가 hidden을 풀지 않아 칸 자체가 안 보인다.
+      표 모양은 설정 화면과 같다 (stats-view.js가 같이 그린다)
+      넓은 화면에서는 확률 카드 오른쪽, 좁은 화면에서는 아래에 온다 (extension.css)
+    -->
+    <aside id="blockedStats" class="blocked-stats" hidden>
+      <div id="statsCards"></div>
+
+      <h3 class="table-title">최근 7일</h3>
+      <div class="table-scroll">
+        <table id="statsDaily">
+          <thead>
+            <tr><th>날짜</th><th>시도</th><th>통과</th><th>통과율</th><th>사용</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </aside>
+  </div>
 
   <!-- config.js를 먼저 불러와야 blocked.js에서 CONFIG를 쓸 수 있다 -->
   <script src="config.js"></script>
+  <script src="stats-view.js"></script>
   <script src="blocked.js"></script>
 </body>
 </html>

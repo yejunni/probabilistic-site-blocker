@@ -40,6 +40,7 @@ EXTENSION_FILES = [
     'blocked.js',
     'options.html',
     'options.js',
+    'stats-view.js',
     'timer.js',
     'extension.css',
 ]

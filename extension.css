@@ -840,6 +840,108 @@ code {
   background: var(--accent);
 }
 
+/*
+  차단 화면 배치: [빈 칸 | 확률 카드 | 기록]
+  양옆 칸을 같은 비율(1fr)로 두어서, 기록이 있든 없든 확률 카드는 항상 정중앙이다.
+  카드·표 모양은 위의 설정 화면 것을 그대로 쓰고 여기서는 배치만 정한다.
+*/
+.blocked-layout {
+  display: grid;
+  grid-template-columns: 1fr minmax(0, 650px) 1fr;
+  gap: 28px;
+  align-items: center;
+  width: 100%;
+}
+
+.blocked-layout .blocked-shell {
+  grid-column: 2;
+  width: 100%;
+}
+
+/* 세 칸 모두 1번째 줄에 둔다. 안 정하면 칸 번호가 앞 칸보다 작은 찬스가 다음 줄로 밀린다 */
+.blocked-layout .blocked-shell,
+.chance-box,
+.blocked-stats {
+  grid-row: 1;
+}
+
+/* 왼쪽 찬스 칸. 오른쪽 기록 칸과 같은 모양 */
+.chance-box {
+  grid-column: 1;
+  justify-self: end;
+  width: min(100%, 300px);
+  padding: 22px 20px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+#chanceInfo {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#chanceResult.pass { color: var(--accent-strong); font-weight: 700; }
+#chanceResult.fail { color: var(--coral-strong); font-weight: 700; }
+
+/* display는 정하지 않는다. 보일지 말지는 blocked.js가 hidden으로 정한다 */
+.blocked-stats {
+  grid-column: 3;
+  justify-self: start;
+  width: min(100%, 400px);
+  padding: 22px 20px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  text-align: left;
+}
+
+/*
+  화면이 좁으면 카드 아래로 내린다.
+  1440px: 카드 650 + 양옆 칸 각 340 이상 + 간격·바깥 여백. 이보다 좁으면 옆 칸에서 표가 찌그러진다
+*/
+@media (max-width: 1439px) {
+  .blocked-layout {
+    grid-template-columns: minmax(0, 650px);
+    justify-content: center;
+  }
+
+  .blocked-layout .blocked-shell,
+  .chance-box,
+  .blocked-stats {
+    grid-column: 1;
+    grid-row: auto;   /* 위에서 1줄로 묶은 걸 풀어서 카드 → 찬스 → 기록 순으로 쌓는다 */
+  }
+
+  .chance-box,
+  .blocked-stats {
+    justify-self: stretch;
+    width: auto;
+  }
+}
+
+.blocked-stats #statsCards {
+  grid-template-columns: 1fr;   /* 카드가 '오늘' 한 장뿐이라 한 줄을 다 쓴다 */
+  margin: 0 0 16px;
+}
+
+.blocked-stats .stat-card {
+  min-height: 0;
+}
+
+/* 옆 칸은 폭이 좁아서 표 여백을 줄이고, 그래도 넘치면 표만 가로로 밀어 보게 한다 */
+.blocked-stats .table-scroll {
+  overflow-x: auto;
+}
+
+.blocked-stats th,
+.blocked-stats td {
+  padding: 7px 6px;
+  white-space: nowrap;
+}
+
 #statsRefreshBtn {
   min-height: 34px;
   padding: 5px 11px;

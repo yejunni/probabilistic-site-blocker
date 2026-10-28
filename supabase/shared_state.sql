@@ -15,11 +15,13 @@ create table if not exists public.shared_state (
   used_today_min real not null default 0, -- 오늘 쓴 시간(분)
   wait_start_at  bigint,                  -- 확률 계산의 기준 시각(ms). 거부/종료 때 갱신
   settings       jsonb,                   -- 공유되는 설정(곡선, 하루 한도 등). null이면 아직 없음
+  chance_day     text,                    -- 오늘의 찬스를 마지막으로 쓴 날짜. 오늘이면 이미 쓴 것
   updated_at     timestamptz not null default now()
 );
 
 -- 기존에 만든 표에는 없는 컬럼이므로 재실행 시를 위해 따로 추가한다
 alter table public.shared_state add column if not exists settings jsonb;
+alter table public.shared_state add column if not exists chance_day text;
 
 -- 표를 직접 만지는 건 전부 막는다.
 -- 아래 함수들만 security definer 로 접근한다.
@@ -47,14 +49,15 @@ declare
   v_used     real;
   v_wait     bigint;
   v_settings jsonb;
+  v_chance   text;
 begin
   insert into public.shared_state (client_id, today_key, used_today_min)
   values (p_client_id, p_today_key, 0)
   on conflict (client_id) do nothing;
 
   -- for update: 이 줄을 잠근다. 다른 요청은 끝날 때까지 기다린다
-  select today_key, used_today_min, wait_start_at, settings
-    into v_today, v_used, v_wait, v_settings
+  select today_key, used_today_min, wait_start_at, settings, chance_day
+    into v_today, v_used, v_wait, v_settings, v_chance
   from public.shared_state
   where client_id = p_client_id
   for update;
@@ -69,7 +72,8 @@ begin
   return json_build_object(
     'used_today_min', v_used,
     'wait_start_at',  v_wait,
-    'settings',       v_settings
+    'settings',       v_settings,
+    'chance_day',     v_chance      -- 다른 기기가 오늘 찬스를 썼는지 알 수 있게
   );
 end;
 $$;
@@ -211,7 +215,51 @@ $$;
 
 
 -- ─────────────────────────────────────────────────────────────
--- 5) 예전 테스트용 함수 지우기 (2026-10-28)
+-- 5) 오늘의 찬스 쓰기 — [찬스 쓰기]를 누를 때, 주사위를 굴리기 전에
+--
+-- "오늘 이미 썼나?"를 확인하고 "썼다"고 적는 걸 줄을 잠근 채 한 번에 한다.
+-- 따로 하면 두 기기가 거의 같이 눌렀을 때 둘 다 "아직 안 씀"을 읽고
+-- 찬스를 두 번 쓰게 된다. (consume_minutes와 같은 이유)
+--
+-- 주사위를 굴리기 '전에' 부르는 이유: 굴린 뒤에 적으면, 꽝이 나왔을 때
+-- 적기 전에 창을 닫아서 찬스를 다시 쓸 수 있다.
+-- ─────────────────────────────────────────────────────────────
+create or replace function public.use_chance(
+  p_client_id text,
+  p_today_key text
+)
+returns json
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_chance text;
+begin
+  insert into public.shared_state (client_id, today_key, used_today_min)
+  values (p_client_id, p_today_key, 0)
+  on conflict (client_id) do nothing;
+
+  select chance_day into v_chance
+  from public.shared_state
+  where client_id = p_client_id
+  for update;
+
+  if v_chance = p_today_key then
+    return json_build_object('ok', false, 'reason', 'used');
+  end if;
+
+  update public.shared_state
+    set chance_day = p_today_key, updated_at = now()
+    where client_id = p_client_id;
+
+  return json_build_object('ok', true);
+end;
+$$;
+
+
+-- ─────────────────────────────────────────────────────────────
+-- 6) 예전 테스트용 함수 지우기 (2026-10-28)
 --
 -- 테스트 칸에서 오늘 사용량을 통째로 바꾸던 dev_set_used_minutes를 없앴다.
 -- 공유 코드만 알면 남의 사용량을 0으로 되돌릴 수 있는 구멍이었다.
@@ -225,8 +273,10 @@ revoke all on function public.sync_state(text, text)                    from pub
 revoke all on function public.consume_minutes(text, text, int, int)     from public;
 revoke all on function public.set_wait_start(text, text, bigint)        from public;
 revoke all on function public.set_shared_settings(text, text, jsonb)    from public;
+revoke all on function public.use_chance(text, text)                    from public;
 
 grant execute on function public.sync_state(text, text)                 to anon;
 grant execute on function public.consume_minutes(text, text, int, int)  to anon;
 grant execute on function public.set_wait_start(text, text, bigint)     to anon;
 grant execute on function public.set_shared_settings(text, text, jsonb) to anon;
+grant execute on function public.use_chance(text, text)                 to anon;

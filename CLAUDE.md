@@ -84,7 +84,8 @@ background.js가 난수(0~100)를 뽑아 확률과 비교
 | `extension.css` | 차단 화면·설정 화면 공용 디자인 (Figma에서 가져옴). CSS 변수 + 다크 모드 |
 | `probability.js` | `calcProb(경과분, 사용분, 설정)` → 확률(%). 계산만 한다 |
 | `background.js` | 서비스 워커. 판정, 설정, 차단 해제/재차단, 알람, 저장 |
-| `blocked.html` / `blocked.js` | 차단 화면. 확률 표시, 시도, 이용 시간 정하기 |
+| `blocked.html` / `blocked.js` | 차단 화면. 확률 표시, 시도, 이용 시간 정하기, 오늘 기록 + 최근 7일 |
+| `stats-view.js` | 통계 카드·7일 표 그리기. **차단 화면과 설정 화면이 같이 쓴다** (복사본이 어긋나지 않게) |
 | `options.html` / `options.js` | 설정 화면. 슬라이더, 곡선 미리보기, 점 끌기 |
 | `timer.js` | content script. 유튜브 페이지 위에 남은 시간을 띄운다 |
 | `supabase.js` | 기록을 Supabase로 보내는 부분. 보내기만 한다 |
@@ -92,7 +93,7 @@ background.js가 난수(0~100)를 뽑아 확률과 비교
 | `secrets.js` | **실제 키. `.gitignore`에 있어 저장소에 없다** |
 | `supabase/schema.sql` | 기록 테이블(attempts/sessions) + RLS. **1번째로 실행** |
 | `supabase/stats.sql` | 통계 함수 `get_stats`. **2번째로 실행** |
-| `supabase/shared_state.sql` | 한도 공유 표 + 함수 4개 + 옛 테스트 함수 삭제. **3번째로 실행** (재실행해도 안전) |
+| `supabase/shared_state.sql` | 한도 공유 표 + 함수 5개(`use_chance` 포함) + 옛 테스트 함수 삭제. **3번째로 실행** (재실행해도 안전) |
 | `README.md` | 처음 보는 사람용 소개·설치 방법. CLAUDE.md는 AI용 작업 메모 |
 | `dashboard/index.html` / `app.js` | 웹 대시보드 화면. 공유 코드로 `/api/stats`에 묻고 그린다 |
 | `dashboard/api/stats.js` | Vercel 서버 함수. 환경변수(`SUPABASE_URL`, `SUPABASE_ANON_KEY`)의 키로 `get_stats` 호출 |
@@ -184,6 +185,30 @@ p = maxProb * (t / linearFullMin)
 
 ---
 
+## 오늘의 찬스 (2026-10-28)
+
+차단 화면 왼쪽 칸. **하루 한 번, 기다린 시간과 상관없이 `chanceProb`(50%)로 `chanceMinutes`(30분)**.
+숫자는 `config.js`에만 있다 (설정 화면에서는 못 바꾼다).
+
+| 규칙 | 이유 (사용자가 고름) |
+|---|---|
+| 받은 시간은 **하루 한도에서 차감**. **남은 한도가 30분 미만이어도 30분을 준다** (한도를 넘을 수 있음). 한도를 다 쓴 뒤에는 못 씀 | 찬스는 '안 기다리고 통과할 기회'. 남은 만큼만 주면 찬스 느낌이 약해서 (사용자 변경) |
+| **꽝이어도 기다린 시간 그대로** | 덤으로 주는 기회라 잃는 게 없어야 한다. (당첨 후 이용이 끝나면 평소처럼 0%부터) |
+| **공유 코드 전체에 하루 한 번** | 프로필을 바꿔 찬스를 또 쓰지 못하게 |
+
+- **주사위를 굴리기 전에 "썼다"를 먼저 적는다.** 굴린 뒤에 적으면 꽝을 보고 창을 닫아 다시 쓸 수 있다
+- 서버의 `use_chance`가 줄을 잠그고 확인 → 두 기기가 동시에 눌러도 한 쪽만 된다
+- `sync_state`가 `chance_day`를 같이 돌려준다. **오늘 값일 때만** 받고, 비어 있다고 로컬 값을 지우지 않는다
+  (SQL을 아직 다시 안 돌린 DB가 빈 값을 보내면 찬스가 되살아나므로)
+- 당첨되면 `passTicket`을 주고 **`startSession(분, allowOverLimit=true)`을 부른다.** 한도 검사·서버 차감·알람·기록을 다시 만들지 않으려고
+  - `allowOverLimit`은 메시지로 넘길 수 없다 (`START_SESSION`은 분 수만 넘김). 콘솔로 한도를 넘기는 구멍이 안 생긴다
+  - 서버 `consume_minutes`에는 한도를 `dailyLimit + chanceMinutes`로 늘려 보낸다. SQL 수정 없음
+- 확장 ↻ 없이 차단 화면만 새로고침하면 background가 옛 코드라 `undefined%`가 떴다 → "확장을 새로고침해 주세요" 표시
+- 기록은 `attempts` 표에 `curve: 'chance'`로 남는다. 통계의 '시도'에 같이 잡힌다
+- 판정 두 개가 동시에 돌지 않게, 시도·찬스 중 하나를 누르면 다른 버튼도 잠근다
+
+---
+
 ## 경과 시간 규칙
 
 `waitStartAt`(확률 계산의 기준 시각)이 언제 갱신되는지가 핵심이다.
@@ -250,6 +275,7 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 | `todayKey` | `'2026-09-19'` 형식. 날이 바뀌면 사용량 자동 초기화 |
 | `usedTodayMin` | 오늘 이미 쓴 시간(분) |
 | `sessionEndAt` | 이용 중이면 끝나는 시각(ms), 아니면 null |
+| `chanceDay` | 오늘의 찬스를 마지막으로 쓴 날짜. 오늘과 같으면 이미 씀 |
 | `settings` | 사용자 설정 한 덩어리 |
 | `clientId` | Supabase 기록에 붙이는 임의의 id. 공유 코드가 없을 때 쓴다 |
 
@@ -313,6 +339,7 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 | **`시도하기` 직전** | 읽기 | `sync_state` |
 | 거부당했을 때 / 이용이 끝났을 때 | 쓰기 | `set_wait_start` |
 | 유튜브 열 때(시간 정할 때) | 쓰기 | `consume_minutes` |
+| `찬스 쓰기` (주사위 굴리기 **전**) | 쓰기 | `use_chance` |
 
 - **차감은 DB 함수 안에서 한다.** 기기 A·B가 거의 동시에 시작하면 둘 다 같은 값을 읽고
   각자 더해 써서 한 쪽 차감이 사라진다. 줄을 잠그고 처리하면 끼어들 틈이 없다.
@@ -344,14 +371,16 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 | `GET_STATUS` | blocked.js (1초마다) | `buildStatus()` 결과 |
 | `ATTEMPT` | blocked.js | `{ passed, roll, prob, status }` |
 | `START_SESSION` `{minutes}` | blocked.js | `{ ok, endAt }` 또는 `{ ok:false, error }`. **`passTicket`이 없으면 거절** |
+| `CHANCE` | blocked.js | `{ ok, passed, roll, prob, minutes, endAt }` 또는 `{ ok:false, error, status }`. 당첨이면 이미 차단이 풀려 있다 |
 | `GET_SESSION` | timer.js | `{ sessionEndAt, warnBeforeEndSec }` |
 | `GET_SETTINGS` | options.js | `{ settings, rules, defaults }` |
 | `SET_SETTINGS` `{settings}` | options.js | `{ ok, settings }` 또는 `{ ok:false, errors:[] }` |
 | `SYNC_SHARED` | blocked.js (열 때 + 2초마다) | `{ sharing, ok, status }`. 서버 값을 받아 사본에 덮어씀 |
-| `GET_STATS` `{timeZone}` | options.js | `{ ok, data, recordId }`. 오늘/7일/전체 + 일별 |
+| `GET_STATS` `{timeZone}` | options.js, blocked.js (열 때 + 시도 직후) | `{ ok, data, recordId }`. 오늘/7일/전체 + 일별 |
 
 `buildStatus()`가 돌려주는 것: `elapsedMin` `usedTodayMin` `remainingMin`
 `dailyLimit` `inSession` `sessionEndAt` `prob` `canAttempt` `sharing` `lastSyncAt`
+`chanceUsed` `chanceProb` `chanceMinutes` `canChance`
 
 `canAttempt`는 **남은 한도가 있고 이용 중이 아닐 때만** 참이다.
 이용 중에 또 통과하면 세션이 덮어써져 앞의 시간이 사라지기 때문.
@@ -583,6 +612,15 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
   `devSetElapsed`/`devSetUsed`/`devSetSharedUsed`, CSS, `dev_set_used_minutes` SQL 함수
   - SQL은 `drop function if exists`로 바꿔, 이미 만든 DB에서도 지워지게 함
   - `make_release.py`의 devMode 바꾸기 단계도 필요 없어져 제거
+- **차단 화면에 오늘 기록 + 최근 7일 표** (사용자 요청. 공간이 남고, 설정까지 안 가도 보이게)
+  - 표 그리는 함수(`addStatCard` `renderDailyTable` `formatMinutes`)를 `options.js`에서
+    `stats-view.js`로 옮겨 두 화면이 같이 씀. zip 목록에도 추가 (14개)
+  - 네트워크를 타므로 1초 갱신에는 안 넣음. 열 때 + [시도하기] 직후만
+  - Supabase가 안 되면 칸을 숨긴 채로 둔다 (본래 기능에 영향 없게)
+  - 배치: `.blocked-layout` 3칸 grid `[1fr | 카드 650 | 1fr]`. 기록은 **오른쪽 칸**이라
+    늦게 떠도 확률 카드가 밀리지 않는다. **1440px 미만이면 카드 아래로** (옆 칸이 340px 이상 나와야 표가 안 찌그러짐)
+- **오늘의 찬스** 추가 (사용자 아이디어). 위 "오늘의 찬스" 절 참고. 비어 있던 왼쪽 칸에 둠
+  - `shared_state.chance_day` 칸 + `use_chance` 함수. **`shared_state.sql`을 다시 실행해야 한다**
 
 ---
 

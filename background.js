@@ -62,7 +62,8 @@ const DEFAULT_STATE = {
   waitStartAt: null,      // 확률 계산의 기준 시각(ms). 여기서부터 얼마나 지났는지를 잰다
   todayKey: '',           // '2026-09-07' 같은 날짜. 날이 바뀌면 사용량을 초기화하려고 둔다
   usedTodayMin: 0,        // 오늘 이미 쓴 시간(분)
-  sessionEndAt: null      // 이용 중이면 끝나는 시각(ms), 아니면 null
+  sessionEndAt: null,     // 이용 중이면 끝나는 시각(ms), 아니면 null
+  chanceDay: ''           // 오늘의 찬스를 마지막으로 쓴 날짜. 오늘 날짜와 같으면 이미 쓴 것
 };
 
 
@@ -162,6 +163,15 @@ async function pullShared() {
     todayKey: getTodayKey()
   });
   await markSynced();
+
+  // 다른 기기가 오늘 찬스를 썼으면 여기서도 쓴 걸로 친다.
+  //
+  // '오늘'일 때만 받고, 비어 있다고 로컬 값을 지우지는 않는다.
+  // shared_state.sql을 아직 다시 실행하지 않은 DB는 chance_day를 안 보내주는데,
+  // 그걸 "안 씀"으로 받아 지워버리면 찬스를 또 쓸 수 있게 되기 때문이다.
+  if (result.data.chance_day === getTodayKey()) {
+    await saveState({ chanceDay: getTodayKey() });
+  }
 
   if (result.data.settings) {
     // 다른 기기가 올려둔 설정(곡선, 하루 한도 등)을 받아온다.
@@ -566,7 +576,14 @@ async function buildStatus() {
     prob: calcProb(elapsedMin, state.usedTodayMin, settings),
 
     // 버튼을 누를 수 있는 상태인지
-    canAttempt: remainingMin > 0 && !inSession
+    canAttempt: remainingMin > 0 && !inSession,
+
+    // 오늘의 찬스. 확률·시간은 config.js.
+    // 남은 한도가 30분보다 적어도 30분을 그대로 준다 (startSession의 allowOverLimit 참고)
+    chanceUsed: state.chanceDay === getTodayKey(),
+    chanceProb: CONFIG.chanceProb,
+    chanceMinutes: CONFIG.chanceMinutes,
+    canChance: remainingMin > 0 && !inSession && state.chanceDay !== getTodayKey()
   };
 }
 
@@ -644,7 +661,12 @@ async function attempt() {
 
 
 // 시간을 고르고 나서. 차단을 풀고 알람을 맞춘다.
-async function startSession(minutes) {
+//
+// allowOverLimit: 오늘의 찬스 전용. 남은 한도가 30분보다 적어도 30분을 열어준다.
+//   (예: 10분 남았을 때 당첨 → 30분 열림, 오늘 사용 80분)
+//   메시지(START_SESSION)로는 이 값을 넘길 수 없다. handleMessage가 minutes만 넘기므로,
+//   콘솔에서 직접 보내도 한도를 넘길 수 없다.
+async function startSession(minutes, allowOverLimit = false) {
   // 방금 통과한 사람만 연다. 통과권은 attempt()가 통과했을 때 발급한다.
   const { passTicket } = await TEMP.get('passTicket');
   if (!passTicket) {
@@ -663,9 +685,16 @@ async function startSession(minutes) {
   if (!Number.isFinite(wanted) || wanted < 1) {
     return { ok: false, error: '이용 시간은 1분 이상이어야 합니다' };
   }
-  if (wanted > remainingMin) {
+  if (wanted > remainingMin && !allowOverLimit) {
     return { ok: false, error: `남은 한도(${remainingMin}분)를 넘을 수 없습니다` };
   }
+
+  // 서버에 넘길 한도. 찬스일 때는 찬스 시간만큼 넘는 걸 허락한다.
+  // 서버(consume_minutes)는 '쓴 시간 + 이번 시간 ≤ 한도'만 검사하므로
+  // 한도를 그만큼 늘려서 보내면 된다. SQL을 고칠 필요가 없다.
+  const serverLimit = allowOverLimit
+    ? settings.dailyLimit + CONFIG.chanceMinutes
+    : settings.dailyLimit;
 
   // 공유가 켜져 있으면 서버에서 차감한다.
   //
@@ -677,7 +706,7 @@ async function startSession(minutes) {
 
   if (code) {
     const result = await consumeSharedMinutes(
-      code, getTodayKey(), wanted, settings.dailyLimit
+      code, getTodayKey(), wanted, serverLimit
     );
 
     if (result.ok && result.data.ok === false) {
@@ -726,6 +755,74 @@ async function startSession(minutes) {
   });
 
   return { ok: true, endAt };
+}
+
+
+// [찬스 쓰기]를 눌렀을 때. 하루 한 번, 기다린 시간과 상관없이 정해진 확률로 판정한다.
+//
+// 일반 시도와 다른 점:
+//   - 확률이 곡선이 아니라 CONFIG.chanceProb로 고정
+//   - 꽝이어도 기다린 시간(waitStartAt)을 건드리지 않는다
+//   - 당첨되면 시간을 고르지 않고 바로 CONFIG.chanceMinutes만큼 연다
+async function useChance() {
+  await pullShared();   // 다른 기기가 오늘 찬스를 썼는지 먼저 확인한다
+  const status = await buildStatus();
+
+  if (!status.canChance) {
+    const reason = status.chanceUsed ? '오늘은 찬스를 이미 썼습니다'
+                 : status.inSession  ? '이용 중에는 쓸 수 없습니다'
+                 :                     '오늘 한도를 다 썼습니다';
+    return { ok: false, error: reason, status };
+  }
+
+  // 주사위를 굴리기 '전에' 쓴 걸로 적는다.
+  // 굴린 뒤에 적으면, 꽝을 보고 적히기 전에 창을 닫아 다시 쓸 틈이 생긴다.
+  const today = getTodayKey();
+  const code = await getShareCode();
+
+  if (code) {
+    // 서버가 줄을 잠그고 확인한다. 두 기기가 거의 같이 눌러도 한 쪽만 된다
+    const claim = await claimSharedChance(code, today);
+
+    if (claim.ok && claim.data.ok === false) {
+      await saveState({ chanceDay: today });
+      return { ok: false, error: '다른 기기에서 오늘 찬스를 이미 썼습니다', status: await buildStatus() };
+    }
+    // claim.ok가 false면(인터넷 끊김 등) 로컬 기록만으로 진행한다. 다른 기능과 같은 방침
+  }
+  await saveState({ chanceDay: today });
+
+  const roll = Math.random() * 100;
+  const passed = roll < CONFIG.chanceProb;
+
+  // 일반 시도와 같은 표에 남기되, curve를 'chance'로 적어 구분한다
+  await logAttempt({
+    client_id: await getRecordId(),
+    passed: passed,
+    prob: CONFIG.chanceProb,
+    roll: roll,
+    elapsed_min: status.elapsedMin,
+    used_today_min: status.usedTodayMin,
+    curve: 'chance'
+  });
+
+  if (!passed) {
+    return { ok: true, passed: false, roll, prob: CONFIG.chanceProb, status: await buildStatus() };
+  }
+
+  // 당첨: 통과권을 주고 일반 통과와 같은 길(startSession)로 연다.
+  // 한도 검사, 서버 차감, 알람, 기록을 새로 만들지 않고 그대로 쓰려는 것.
+  await TEMP.set({ passTicket: true });
+  const session = await startSession(status.chanceMinutes, true);
+
+  if (!session.ok) {
+    // 그 사이 다른 기기가 한도를 써버린 경우 등. 시간을 고를 수 없는 찬스라 통과권은 거둔다
+    await TEMP.remove('passTicket');
+    return { ok: false, error: session.error, status: await buildStatus() };
+  }
+
+  return { ok: true, passed: true, roll, prob: CONFIG.chanceProb,
+           minutes: status.chanceMinutes, endAt: session.endAt };
 }
 
 
@@ -817,6 +914,9 @@ async function handleMessage(message) {
 
     case 'START_SESSION':
       return await startSession(message.minutes);
+
+    case 'CHANCE':
+      return await useChance();
 
     default:
       return { error: '알 수 없는 요청: ' + message.type };
