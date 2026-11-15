@@ -154,12 +154,27 @@ async function pullShared() {
     return { sharing: true, ok: false };
   }
 
+  // 서버에 기준 시각이 아직 없을 때 (공유 코드를 새로 넣었고, 아직 거부·종료가 없었음).
+  //
+  // 예전에는 이 null을 그대로 받아 로컬 값을 지웠다. 그러면 buildStatus가
+  // '처음 왔다'고 보고 기준 시각을 지금으로 잡고, 2초 뒤 동기화가 또 null로 지워서
+  // 기다린 시간이 2초마다 0으로 돌아갔다 (확률이 0%에서 안 올라가던 버그).
+  //
+  // 그래서 서버가 비어 있으면 로컬 값을 지키고, 그 값을 서버에 올려 채운다.
+  // 로컬에도 없으면 지금을 기준으로 잡는다.
+  let waitStartAt;
+  if (result.data.wait_start_at === null) {
+    const local = await loadState();
+    waitStartAt = local.waitStartAt !== null ? local.waitStartAt : Date.now();
+    await pushWaitStart(waitStartAt);
+  } else {
+    waitStartAt = Number(result.data.wait_start_at);
+  }
+
   // saveState는 바뀐 값만 쓰므로, 서버 값이 그대로면 아무것도 쓰지 않는다.
   await saveState({
     usedTodayMin: Number(result.data.used_today_min) || 0,
-    waitStartAt: result.data.wait_start_at === null
-      ? null
-      : Number(result.data.wait_start_at),
+    waitStartAt,
     todayKey: getTodayKey()
   });
   await markSynced();
@@ -592,6 +607,47 @@ async function buildStatus() {
 // 판정 / 이용 시작 / 이용 종료
 // ─────────────────────────────────────────────────────────────
 
+// 주사위 한 번. 실제 시도·찬스·모의 판정이 전부 이 함수 하나를 쓴다.
+// 그래야 모의 판정 결과가 "실제 판정이 공정한가"의 증거가 된다.
+//
+// 0 이상 100 미만의 난수를 뽑아 확률과 비교한다.
+// 확률이 30%면 0~29.99가 나올 때 통과 → 100번 중 30번꼴
+function rollDice(prob) {
+  const roll = Math.random() * 100;
+  return { roll, passed: roll < prob };
+}
+
+
+// 모의 판정 (테스트용). 차단 화면의 [모의 판정] 버튼.
+//
+// 지금 설정의 곡선으로 몇 분 지점의 확률을 구하고, 그 확률로 rollDice를
+// times번 굴려 실제 통과율을 센다. 확률이 맞게 작동하면 두 값이 거의 같아야 한다.
+//
+// 상태·서버·기록은 전혀 건드리지 않는다. 계산만 하고 돌려준다.
+// 그래서 예전 테스트 칸처럼 남의 값을 바꾸는 구멍이 생기지 않는다.
+async function testRolls(times) {
+  const settings = await loadSettings();
+  const state = await loadState();
+  const rows = [];
+
+  for (const minutes of CONFIG.testRollMinutes) {
+    const prob = calcProb(minutes, state.usedTodayMin, settings);
+    let passCount = 0;
+    for (let i = 0; i < times; i++) {
+      if (rollDice(prob).passed) passCount++;
+    }
+    rows.push({
+      minutes,
+      prob,
+      passRate: 100 * passCount / times,
+      // 5번 연속 실패할 확률(%). "운이 없었나"를 가늠하는 용도
+      fail5: 100 * Math.pow(1 - prob / 100, 5)
+    });
+  }
+  return { ok: true, times, rows };
+}
+
+
 // [시도] 버튼을 눌렀을 때. 난수를 뽑아 통과/거부를 정한다.
 async function attempt() {
   // 판정 직전에 서버 값을 한 번 더 확인한다.
@@ -611,10 +667,7 @@ async function attempt() {
     return { passed: false, blocked: true, status };
   }
 
-  // 0 이상 100 미만의 난수를 뽑아 확률과 비교한다.
-  // 확률이 30%면 0~29.99가 나올 때 통과 → 100번 중 30번꼴
-  const roll = Math.random() * 100;
-  const passed = roll < status.prob;
+  const { roll, passed } = rollDice(status.prob);
 
   if (passed) {
     // 통과권을 발급한다. startSession은 이게 있을 때만 유튜브를 열어준다.
@@ -792,8 +845,7 @@ async function useChance() {
   }
   await saveState({ chanceDay: today });
 
-  const roll = Math.random() * 100;
-  const passed = roll < CONFIG.chanceProb;
+  const { roll, passed } = rollDice(CONFIG.chanceProb);
 
   // 일반 시도와 같은 표에 남기되, curve를 'chance'로 적어 구분한다
   await logAttempt({
@@ -914,6 +966,10 @@ async function handleMessage(message) {
 
     case 'START_SESSION':
       return await startSession(message.minutes);
+
+    // 횟수는 화면이 정하지 않는다. 콘솔에서 1억 번을 보내 워커를 멈추지 못하게
+    case 'TEST_ROLLS':
+      return await testRolls(CONFIG.testRollTimes);
 
     case 'CHANCE':
       return await useChance();

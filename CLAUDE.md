@@ -372,6 +372,7 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 | `ATTEMPT` | blocked.js | `{ passed, roll, prob, status }` |
 | `START_SESSION` `{minutes}` | blocked.js | `{ ok, endAt }` 또는 `{ ok:false, error }`. **`passTicket`이 없으면 거절** |
 | `CHANCE` | blocked.js | `{ ok, passed, roll, prob, minutes, endAt }` 또는 `{ ok:false, error, status }`. 당첨이면 이미 차단이 풀려 있다 |
+| `TEST_ROLLS` | blocked.js ([모의 판정]) | `{ ok, times, rows:[{minutes, prob, passRate, fail5}] }`. 상태·기록 안 바꿈. 횟수는 config(`testRollTimes`)가 정함 |
 | `GET_SESSION` | timer.js | `{ sessionEndAt, warnBeforeEndSec }` |
 | `GET_SETTINGS` | options.js | `{ settings, rules, defaults }` |
 | `SET_SETTINGS` `{settings}` | options.js | `{ ok, settings }` 또는 `{ ok:false, errors:[] }` |
@@ -621,6 +622,25 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
     늦게 떠도 확률 카드가 밀리지 않는다. **1440px 미만이면 카드 아래로** (옆 칸이 340px 이상 나와야 표가 안 찌그러짐)
 - **오늘의 찬스** 추가 (사용자 아이디어). 위 "오늘의 찬스" 절 참고. 비어 있던 왼쪽 칸에 둠
   - `shared_state.chance_day` 칸 + `use_chance` 함수. **`shared_state.sql`을 다시 실행해야 한다**
+
+### 2026-11-10 [Claude Code]
+- **버그 수정**: 공유 코드를 새로 넣으면 서버 `wait_start_at`이 null이라, 2초 동기화가 로컬 기준 시각을
+  계속 지워 **기다린 시간이 2초마다 0으로** 돌아갔다 (확률이 0%에서 안 오름).
+  → `pullShared`에서 서버가 null이면 로컬 값(없으면 지금)을 지키고 `pushWaitStart`로 서버에 채움
+- 계산식(`probability.js`)은 파이썬으로 다시 검산. 검산표와 같고, 점을 이상하게 둬도 감소 구간 없음
+
+### 2026-11-11 [Claude Code]
+- **버그 수정**: points 곡선이 85%(마지막 점)에 닿기 직전 다시 빨라졌다
+  (5분당 증가 105→110분 +0.91%, 115→120분 +1.39%). 120분에서는 기울기가 뚝 끊기며 평평해졌다.
+  원인: 마지막 점의 기울기를 할선(0.325%/분)으로 잡음 → **마지막 점 기울기를 0으로**.
+  이제 85%로 갈수록 계속 느려진다 (+3.5 → +0.1). 80분 이하 값과 120분 값은 그대로라 검산표는 안 바뀜.
+  85분은 75.3% → 75.5%. 무작위 점 20000세트로 감소 구간이 없고 마지막 y를 넘지 않는 것도 확인
+- **모의 판정 추가** (사용자 요청: "5연속 실패가 운인가?"). 차단 화면 아래 [모의 판정 (테스트)] 버튼
+  - 주사위를 `rollDice(prob)` 한 함수로 모음. 시도·찬스·모의 판정이 같은 코드를 쓴다
+  - `testRollMinutes`의 각 시점 확률로 `testRollTimes`(1만)번 굴려 실제 통과율 + 5연속 실패 확률을 표로
+  - **상태·서버·기록을 전혀 안 건드린다.** 옛 테스트 칸(`dev_set_used_minutes`)의 구멍이 다시 생기지 않게.
+    횟수도 메시지로 안 받는다 (콘솔에서 큰 수를 보내 워커를 멈추지 못하게)
+  - 배포 전에 남길지 뺄지 정할 것
 
 ---
 
