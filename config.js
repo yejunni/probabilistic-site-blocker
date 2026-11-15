@@ -3,10 +3,21 @@
 // 숫자를 바꾸고 싶으면 다른 파일은 열지 말고 여기만 고치면 된다.
 
 const CONFIG = {
+  // ── 차단할 사이트 ──────────────────────────────────────────────
+  // www. 없이 도메인만. 서브도메인은 자동 포함 (youtube.com → www.youtube.com, m.youtube.com도 막힘)
+  //
+  // 차단 규칙(background.js의 rebuildBlockRules)과 통과 규칙(setAllowRule)이
+  // 둘 다 이 목록 하나를 읽는다. 예전에는 rules.json과 background.js에 따로 적혀 있었다.
+  // 고친 뒤에는 확장 카드의 ↻를 눌러야 규칙이 다시 만들어진다.
+  //
+  // 아직 여기 안 따라오는 곳 (다음 작업):
+  //   manifest.json의 content_scripts (남은 시간 표시), background.js의 reloadYoutubeTabs
+  blockedSites: ['youtube.com', 'naver.com', 'instagram.com'],
+
   // ── 어떤 곡선을 쓸지 고르는 스위치 ──────────────────────────────
   // 'log'     : 초반에 확 오르고 나중엔 완만해짐
   // 'linear'  : 일정한 속도로 직선처럼 오름
-  // 'scurve'  : 초반엔 천천히, 중간에 급하게, 끝에 다시 완만 (S자 모양)
+  // 'scurve'  : 초반엔 천천히, 중간에 급하게, 끝에 다시 완만 (S자 모양)d
   // 'points'  : 아래 points에 찍은 점들을 매끄럽게 이어서 만든 곡선
   //
   // 기본은 'points'다. 설정 화면에서 그래프를 직접 끌어 모양을 만드는 방식이

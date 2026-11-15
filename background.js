@@ -20,8 +20,12 @@ try {
 importScripts('supabase.js');
 
 
+// 차단 규칙의 번호는 100부터 사이트마다 하나씩 (100, 101, 102, ...).
+// 100~999를 '차단 규칙 자리'로 쓴다. 지울 때 이 범위를 통째로 지운다.
+const BLOCK_RULE_ID_START = 100;
+
 // 이용 중일 때만 켜지는 "통과시켜라" 규칙의 번호.
-// rules.json의 차단 규칙(id 1)보다 priority가 높아서 이게 이긴다.
+// 차단 규칙(priority 1)보다 priority가 높아서 이게 이긴다.
 const ALLOW_RULE_ID = 1000;
 
 // 이용 시간이 끝났을 때 우리를 깨워줄 알람의 이름
@@ -230,6 +234,7 @@ async function mergeSharedSettings(serverSettings) {
   // sync 쓰기 한도(시간당 1,800번)를 금방 넘긴다. saveState와 같은 이유.
   if (checked.ok && !sameSettings(checked.settings, local)) {
     await STORE.set({ settings: checked.settings });
+    await rebuildBlockRules();   // 다른 기기가 바꾼 설정을 받았을 때도 저장 지점이다
   }
 }
 
@@ -385,12 +390,18 @@ async function saveSettings(changes) {
 
       if (adoptedChecked.ok) {
         await STORE.set({ settings: adoptedChecked.settings });
+        await rebuildBlockRules();
         return { ok: true, settings: adoptedChecked.settings, adopted: true };
       }
     }
   }
 
   await STORE.set({ settings: checked.settings });
+
+  // 설정이 바뀌었으니 차단 규칙도 다시 만든다.
+  // 지금은 blockedSites가 config.js에만 있어 결과가 같지만, 나중에 설정 화면에서
+  // 사이트를 바꾸게 되면 여기서 바로 반영된다. 그때 부르는 곳을 찾아다니지 않으려고 미리 넣어 둔다.
+  await rebuildBlockRules();
 
   // 공유 중이면 방금 저장한 값을 서버에도 올린다.
   // 다른 기기들은 재동기화 때(몇 초 안에) 이 값을 받아간다.
@@ -514,19 +525,93 @@ function cleanPoints(value, errors) {
 // 차단 풀기 / 다시 막기
 // ─────────────────────────────────────────────────────────────
 
-// on이 true면 "유튜브를 통과시켜라"는 임시 규칙을 켜고, false면 끈다.
-// rules.json은 건드리지 않고, 이 규칙을 위에 덮어씌우는 방식이다.
+// 차단할 사이트 목록. ★ 목록을 읽는 통로는 여기 하나뿐이다.
+//
+// 지금은 config.js의 blockedSites를 그대로 읽는다. 설정 화면에서 바꾸게 되면
+// 이 함수만 loadSettings()를 읽도록 고치면 된다. (loadSettings / saveSettings와 같은 생각)
+//
+// 일반 변수에 담아두지 않고 부를 때마다 읽는다. 워커가 잠들었다 깨도 늘 같은 값이 나온다.
+//
+// 형식이 틀린 값('https://naver.com', 'www.naver.com', 빈 칸)은 고쳐 쓰지 않고 빼고 경고만 한다.
+// 이유: 크롬은 규칙 하나라도 틀리면 updateDynamicRules 전체를 거절한다.
+//       오타 하나 때문에 유튜브 차단까지 통째로 풀리면 안 된다.
+//       몰래 고쳐 주지 않는 건, 차단 화면(blocked.js)이 config.js 목록과
+//       글자 그대로 비교하기 때문이다. 고친 값과 적힌 값이 다르면 어긋난다.
+function getBlockedSites() {
+  const domainShape = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;   // 소문자.점.으로.이어진.이름
+  const sites = [];
+
+  for (const site of CONFIG.blockedSites || []) {
+    if (typeof site !== 'string' || !domainShape.test(site) || site.startsWith('www.')) {
+      console.warn(`[차단 목록] '${site}'는 건너뜁니다. www. 없이 'naver.com'처럼 소문자 도메인만 적으세요`);
+      continue;
+    }
+    if (!sites.includes(site)) sites.push(site);   // 같은 게 두 번 있으면 하나만
+  }
+  return sites;
+}
+
+
+// 차단 규칙을 목록대로 새로 만든다. 사이트마다 규칙 하나.
+//
+// 예전에는 rules.json(정적 규칙)에 youtube.com이 적혀 있었다. 정적 규칙은 파일이라
+// 코드에서 내용을 바꿀 수 없어서, 동적 규칙으로 옮겨 목록에서 만들어 낸다.
+// 동적 규칙은 브라우저를 껐다 켜도 남지만, 목록이 바뀌었을 수 있으니
+// 설치·시작·설정 저장 때마다 다시 만든다.
+async function rebuildBlockRules() {
+  const sites = getBlockedSites();
+
+  // 지금 걸려 있는 차단 규칙(100~999번)을 전부 찾아서 지운다.
+  // 사이트가 3개였다가 2개로 줄면 102번이 남는데, 번호를 범위로 찾아야 그것까지 지워진다.
+  const existing = await chrome.declarativeNetRequest.getDynamicRules();
+  const oldBlockIds = existing
+    .map(rule => rule.id)
+    .filter(id => id >= BLOCK_RULE_ID_START && id < ALLOW_RULE_ID);
+
+  const newRules = sites.map((site, index) => ({
+    id: BLOCK_RULE_ID_START + index,
+    priority: 1,
+    action: {
+      type: 'redirect',
+      // ?site=... 를 붙여 차단 화면이 '어느 사이트에서 왔는지' 알게 한다.
+      // 크롬은 이 경로를 확장 주소에 이어 붙일 때 ? 뒤를 그대로 둔다
+      // (Chromium indexed_rule.cc: base_url.Resolve(extension_path))
+      redirect: { extensionPath: '/blocked.html?site=' + encodeURIComponent(site) }
+    },
+    condition: {
+      // requestDomains는 서브도메인까지 잡는다. youtube.com → www.youtube.com, m.youtube.com
+      requestDomains: [site],
+      resourceTypes: ['main_frame']
+    }
+  }));
+
+  // 지우기와 넣기를 한 번에 보낸다. 크롬이 한꺼번에 처리해서 '잠깐 아무것도 안 막히는' 틈이 없다
+  await chrome.declarativeNetRequest.updateDynamicRules({
+    removeRuleIds: oldBlockIds,
+    addRules: newRules
+  });
+}
+
+
+// on이 true면 "차단 사이트를 통과시켜라"는 임시 규칙을 켜고, false면 끈다.
+// 차단 규칙은 건드리지 않고, 이 규칙을 위에 덮어씌우는 방식이다.
+//
+// 규칙 하나에 사이트 전부를 넣는다. 그래서 한 번 통과하면 이용 시간 동안
+// 목록의 모든 사이트가 열린다 (하루 한도도 사이트 구분 없이 하나).
 async function setAllowRule(on) {
+  const sites = getBlockedSites();
+
   await chrome.declarativeNetRequest.updateDynamicRules({
     // 같은 번호의 규칙이 이미 있으면 오류가 나므로 항상 먼저 지운다
     removeRuleIds: [ALLOW_RULE_ID],
-    addRules: on
+    // 목록이 비어 있으면 넣지 않는다. requestDomains: [] 는 크롬이 거절한다
+    addRules: on && sites.length > 0
       ? [{
           id: ALLOW_RULE_ID,
-          priority: 2,                  // rules.json의 차단 규칙(priority 1)보다 높다
+          priority: 2,                  // 차단 규칙(priority 1)보다 높다
           action: { type: 'allow' },
           condition: {
-            urlFilter: '||youtube.com',
+            requestDomains: sites,
             resourceTypes: ['main_frame']
           }
         }]
@@ -1026,6 +1111,12 @@ async function reconcile() {
 
 chrome.runtime.onStartup.addListener(reconcile);
 chrome.runtime.onInstalled.addListener(reconcile);
+
+// 차단 규칙을 목록대로 다시 만든다.
+//   onInstalled: 설치·업데이트·확장 ↻ 때. config.js를 고치고 ↻를 누르면 여기서 반영된다
+//   onStartup  : 브라우저를 켤 때. 동적 규칙은 남아 있지만, 혹시 어긋났을 때를 대비해 맞춘다
+chrome.runtime.onInstalled.addListener(rebuildBlockRules);
+chrome.runtime.onStartup.addListener(rebuildBlockRules);
 
 
 // 예전 버전이 sync에 남겨둔, 이제 쓰지 않는 값을 치운다.

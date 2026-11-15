@@ -79,7 +79,7 @@ background.js가 난수(0~100)를 뽑아 확률과 비교
 | 파일 | 역할 |
 |---|---|
 | `manifest.json` | 확장 설정. 권한, background, options_page, action, content_scripts |
-| `rules.json` | 정적 차단 규칙. youtube.com(main_frame) → blocked.html |
+| `rules.json` | **빈 배열 `[]`** (2026-11-16). 차단은 `background.js`의 동적 규칙이 한다. manifest 선언 때문에 파일은 남김 |
 | `config.js` | **확률·시간 관련 모든 숫자의 공장 초기값.** + 화면·동작 세부값 |
 | `extension.css` | 차단 화면·설정 화면 공용 디자인 (Figma에서 가져옴). CSS 변수 + 다크 모드 |
 | `probability.js` | `calcProb(경과분, 사용분, 설정)` → 확률(%). 계산만 한다 |
@@ -401,12 +401,22 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 
 ## 차단 해제 메커니즘
 
-`rules.json`은 **건드리지 않는다.** 이용 중에만 동적 규칙을 위에 덮어씌운다.
+**차단 사이트 목록은 `config.js`의 `blockedSites` 하나.** 읽는 통로는 `getBlockedSites()` 하나
+(형식이 틀린 값은 빼고 경고. 하나라도 틀리면 크롬이 규칙 전체를 거절하므로).
+규칙은 전부 동적 규칙이다. `rules.json`은 빈 배열.
 
-| | id | priority | action |
-|---|---|---|---|
-| 정적 (`rules.json`) | 1 | 1 | redirect → blocked.html |
-| 동적 (`background.js`) | 1000 | **2** | allow |
+| | id | priority | action | condition |
+|---|---|---|---|---|
+| 차단 (`rebuildBlockRules`) | 100 + 순번 | 1 | redirect → `/blocked.html?site=<도메인>` | `requestDomains: [도메인]` |
+| 통과 (`setAllowRule`) | 1000 | **2** | allow | `requestDomains: 목록 전체` |
+
+- `rebuildBlockRules()`: onInstalled / onStartup / 설정 저장(`saveSettings` 두 곳, `mergeSharedSettings`).
+  100~999번을 `getDynamicRules`로 찾아 전부 지우고 다시 넣는다 (한 번의 호출이라 빈틈 없음)
+- `?site=` 쿼리는 크롬이 지우지 않는다 (Chromium `indexed_rule.cc`가 `base_url.Resolve`로 붙임)
+- `blocked.js`는 `?site=`가 **목록에 있을 때만** 믿는다. 아니면 첫 번째. 엉뚱한 곳으로 돌려보내지 않게
+- **통과 한 번이면 목록 전체가 열린다** (규칙 하나에 전부). 한도도 사이트 구분 없이 하나
+- `blockedSites`는 아직 `SETTING_RULES`에 없다. 넣으면 storage 값이 config.js를 덮어써서
+  config.js를 고쳐도 반영이 안 된다. 설정 화면을 만들 때 `getBlockedSites()`만 `loadSettings`로 바꿀 것
 
 `setAllowRule()`은 항상 `removeRuleIds: [ALLOW_RULE_ID]`를 먼저 넣는다.
 같은 id의 규칙이 이미 있으면 오류가 나기 때문이다.
@@ -445,9 +455,11 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 
 ## 알려진 문제 / 기술 부채
 
-- **차단 대상 도메인이 3곳에 흩어져 있다.** 사이트를 추가하려면 `rules.json`,
-  `background.js`의 `setAllowRule()`, `manifest.json`의 `content_scripts.matches`를
-  **동시에** 고쳐야 한다. 숫자는 `config.js`에 모았지만 도메인은 아직 못 모았다.
+- **차단 도메인이 아직 다 안 모였다.** 차단·통과 규칙은 `config.js`의 `blockedSites`로 모았지만(2026-11-16),
+  아래 두 곳은 여전히 유튜브 고정이다:
+  - `manifest.json`의 `content_scripts.matches` → 다른 사이트엔 남은 시간이 안 뜬다
+  - `background.js`의 `reloadYoutubeTabs()` → 이용이 끝나도 다른 사이트 탭은 새로고침이 안 돼 계속 열려 있다
+  - (꾸미기) 차단 화면의 유튜브 아이콘
 - **프로필·계정 전환으로 우회할 수 있다.** 확장은 자기가 설치된 프로필 안에서만
   동작하므로 코드로는 막을 수 없는 **구조적 한계**다.
   - 압축해제 확장은 구글 계정을 따라 동기화되지 않아, 새 프로필엔 확장이 없다
@@ -642,6 +654,18 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
     횟수도 메시지로 안 받는다 (콘솔에서 큰 수를 보내 워커를 멈추지 못하게)
   - 배포 전에 남길지 뺄지 정할 것
 
+### 2026-11-16 [Claude Code] — 차단 도메인 일원화 1차
+- `config.js`에 `blockedSites: ['youtube.com']`. `rules.json`은 `[]` (사용자 허락. manifest는 그대로)
+- `background.js`: `getBlockedSites()` / `rebuildBlockRules()` 추가, `setAllowRule()`이 같은 목록을 읽음.
+  `urlFilter: '||youtube.com'` → `requestDomains`. 위 "차단 해제 메커니즘" 표 참고
+- `blocked.js`: `?site=`로 제목·돌아갈 주소(`https://<도메인>`). `blocked.html`에 `id="siteTitle"` **추가**(기존 id는 그대로)
+- 확인한 것: `extensionPath`의 `?쿼리`가 유지되는지 → Chromium 소스로 확인(문서에는 언급 없음)
+- **확인됨**: 실제 브라우저에서 `naver.com`을 넣고 ↻ → 네이버가 차단 화면으로 넘어감
+  - 처음엔 안 막혔는데, config.js를 **저장하지 않은 채** ↻를 눌러서였다 (확장은 디스크의 파일을 읽는다)
+- 목록을 `youtube.com`, `naver.com`, `instagram.com`으로 늘림 (사용자 요청)
+- **TODO**: content_scripts, `reloadYoutubeTabs()` (위 "알려진 문제") — 네이버·인스타는 남은 시간 표시가 없고,
+  이용이 끝나도 열린 탭이 새로고침되지 않는다
+
 ---
 
 ## 보고서용 요약
@@ -686,8 +710,9 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 2. **`timer.js` 색을 디자인에 맞추기** — 아직 검정/빨강 rgba 그대로
 3. **종료 1분 전 알림** — `timer.js`가 빨개지는 것까지만 되어 있음
 4. **도메인 설정 일원화 / 차단 사이트 추가**
-   - 1단계: `setAllowRule()`만 `config.js`를 읽게 (안전, 5분)
-   - 2단계: `rules.json`을 동적 규칙으로, `content_scripts`를 `chrome.scripting`으로
+   - ~~1단계: 차단·통과 규칙을 `config.js`에서~~ (2026-11-16 완료)
+   - 2단계: `content_scripts`를 `chrome.scripting`으로, `reloadYoutubeTabs()`도 목록으로
+   - 3단계: 설정 화면에서 사이트 추가/삭제 (`SETTING_RULES`에 넣기)
 5. **`manifest.json`의 `version`이 아직 `0.1`** — 릴리스는 `v1.0`. 맞추려면 물어보고 고칠 것
 6. **제출 전 점검**
    - Vercel 대표 주소가 시크릿 창에서 로그인 없이 열리는지

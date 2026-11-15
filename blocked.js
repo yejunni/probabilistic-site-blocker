@@ -13,6 +13,24 @@ const chanceBtn = document.getElementById('chanceBtn');
 const chanceInfoEl = document.getElementById('chanceInfo');
 const chanceResultEl = document.getElementById('chanceResult');
 
+
+// 어느 사이트에서 막혀 왔는지. 차단 규칙이 주소 뒤에 ?site=naver.com 처럼 붙여 준다.
+//
+// 목록(config.js의 blockedSites)에 있는 값만 믿는다. 주소창에
+// blocked.html?site=아무사이트 를 직접 쳐서, 통과한 뒤 목록에 없는 엉뚱한
+// 곳으로 보내지는 일이 없게 하려는 것이다. 없거나 이상하면 목록의 첫 번째를 쓴다.
+function getCurrentSite() {
+  const fromAddress = new URLSearchParams(location.search).get('site');
+  if (CONFIG.blockedSites.includes(fromAddress)) return fromAddress;
+  return CONFIG.blockedSites[0];
+}
+
+const currentSite = getCurrentSite();   // 이 화면이 떠 있는 동안은 바뀌지 않는 값
+const returnUrl = 'https://' + currentSite;   // 통과한 뒤 돌아갈 곳
+
+document.getElementById('siteTitle').textContent = `${currentSite} 접속 제한`;
+document.title = `차단됨 — ${currentSite}`;
+
 // 1초마다 화면을 새로 그리는 타이머.
 // 이게 없으면 화면을 연 순간의 확률이 그대로 멈춰 있게 된다.
 let ticker = null;
@@ -274,11 +292,11 @@ chanceBtn.addEventListener('click', async () => {
     startTicking();
 
   } else if (outcome.passed) {
-    // 당첨이면 background가 이미 차단을 풀었다. 결과를 잠깐 보여주고 유튜브로 보낸다
+    // 당첨이면 background가 이미 차단을 풀었다. 결과를 잠깐 보여주고 원래 사이트로 보낸다
     chanceResultEl.textContent = `당첨! ${outcome.minutes}분이 열렸습니다`;
     chanceResultEl.className = 'pass';
     attemptBtn.hidden = true;
-    setTimeout(() => { location.href = 'https://www.youtube.com'; }, 1500);
+    setTimeout(() => { location.href = returnUrl; }, 1500);
 
   } else {
     chanceResultEl.textContent = '꽝! 기다린 시간은 그대로입니다';
@@ -438,8 +456,8 @@ document.getElementById('startBtn').addEventListener('click', async () => {
     return;
   }
 
-  // 차단이 풀렸으니 유튜브로 보낸다
-  location.href = 'https://www.youtube.com';
+  // 차단이 풀렸으니 막혀 왔던 사이트로 보낸다
+  location.href = returnUrl;
 });
 
 
