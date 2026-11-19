@@ -798,44 +798,13 @@ async function buildStatus(site) {
 // 판정 / 이용 시작 / 이용 종료
 // ─────────────────────────────────────────────────────────────
 
-// 주사위 한 번. 실제 시도·찬스·모의 판정이 전부 이 함수 하나를 쓴다.
-// 그래야 모의 판정 결과가 "실제 판정이 공정한가"의 증거가 된다.
+// 주사위 한 번. 시도하기와 찬스가 이 함수 하나를 같이 쓴다.
 //
 // 0 이상 100 미만의 난수를 뽑아 확률과 비교한다.
 // 확률이 30%면 0~29.99가 나올 때 통과 → 100번 중 30번꼴
 function rollDice(prob) {
   const roll = Math.random() * 100;
   return { roll, passed: roll < prob };
-}
-
-
-// 모의 판정 (테스트용). 차단 화면의 [모의 판정] 버튼.
-//
-// 지금 설정의 곡선으로 몇 분 지점의 확률을 구하고, 그 확률로 rollDice를
-// times번 굴려 실제 통과율을 센다. 확률이 맞게 작동하면 두 값이 거의 같아야 한다.
-//
-// 상태·서버·기록은 전혀 건드리지 않는다. 계산만 하고 돌려준다.
-// 그래서 예전 테스트 칸처럼 남의 값을 바꾸는 구멍이 생기지 않는다.
-async function testRolls(site, times) {
-  const settings = await loadSettings(site);   // 이 사이트의 곡선으로 굴린다
-  const state = await loadState(site);
-  const rows = [];
-
-  for (const minutes of CONFIG.testRollMinutes) {
-    const prob = calcProb(minutes, state.usedTodayMin, settings);
-    let passCount = 0;
-    for (let i = 0; i < times; i++) {
-      if (rollDice(prob).passed) passCount++;
-    }
-    rows.push({
-      minutes,
-      prob,
-      passRate: 100 * passCount / times,
-      // 5번 연속 실패할 확률(%). "운이 없었나"를 가늠하는 용도
-      fail5: 100 * Math.pow(1 - prob / 100, 5)
-    });
-  }
-  return { ok: true, times, rows };
 }
 
 
@@ -1120,7 +1089,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 
 // 사이트(message.site)가 꼭 있어야 하는 요청들. 차단 화면이 보낸다.
-const SITE_MESSAGES = ['GET_STATUS', 'ATTEMPT', 'SYNC_SHARED', 'START_SESSION', 'TEST_ROLLS', 'CHANCE'];
+const SITE_MESSAGES = ['GET_STATUS', 'ATTEMPT', 'SYNC_SHARED', 'START_SESSION', 'CHANCE'];
 
 async function handleMessage(message, sender) {
   // 차단 화면이 보낸 사이트가 목록에 있는지 먼저 본다. 없으면 아무것도 하지 않는다.
@@ -1188,10 +1157,6 @@ async function handleMessage(message, sender) {
 
     case 'START_SESSION':
       return await startSession(site, message.minutes);
-
-    // 횟수는 화면이 정하지 않는다. 콘솔에서 1억 번을 보내 워커를 멈추지 못하게
-    case 'TEST_ROLLS':
-      return await testRolls(site, CONFIG.testRollTimes);
 
     case 'CHANCE':
       return await useChance(site);

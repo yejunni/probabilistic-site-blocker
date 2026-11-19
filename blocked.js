@@ -311,45 +311,6 @@ chanceBtn.addEventListener('click', async () => {
 });
 
 
-// [설정] 버튼. 확장의 옵션 화면을 새 탭으로 연다.
-// 모의 판정 (테스트용).
-// 굴리는 건 background가 한다 (실제 판정과 같은 rollDice 함수).
-// 여기서는 받은 숫자를 표로 그리기만 한다.
-document.getElementById('testRollsBtn').addEventListener('click', async () => {
-  const table = document.getElementById('testRollsTable');
-  const body = table.querySelector('tbody');
-
-  let result;
-  try {
-    result = await ask({ type: 'TEST_ROLLS' });
-  } catch (error) {
-    result = null;
-  }
-  if (!result || !result.ok) {
-    // background가 옛 코드면 TEST_ROLLS를 모른다
-    body.innerHTML = '<tr><td colspan="4">확장을 새로고침(↻)해 주세요</td></tr>';
-    table.hidden = false;
-    return;
-  }
-
-  body.innerHTML = '';
-  for (const row of result.rows) {
-    const tr = document.createElement('tr');
-    for (const text of [
-      row.minutes + '분',
-      row.prob.toFixed(1) + '%',
-      row.passRate.toFixed(1) + '%',
-      row.fail5.toFixed(1) + '%'
-    ]) {
-      const td = document.createElement('td');
-      td.textContent = text;
-      tr.appendChild(td);
-    }
-    body.appendChild(tr);
-  }
-  table.hidden = false;
-});
-
 // [설정]: 이 사이트의 설정이 바로 열리게 주소에 ?site=를 붙여 연다.
 //
 // 예전에는 chrome.runtime.openOptionsPage()를 썼는데, 그 함수는 주소 뒤에

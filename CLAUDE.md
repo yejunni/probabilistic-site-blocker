@@ -372,7 +372,6 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 | `ATTEMPT` | blocked.js | `{ passed, roll, prob, status }` |
 | `START_SESSION` `{minutes}` | blocked.js | `{ ok, endAt }` 또는 `{ ok:false, error }`. **`passTicket`이 없으면 거절** |
 | `CHANCE` | blocked.js | `{ ok, passed, roll, prob, minutes, endAt }` 또는 `{ ok:false, error, status }`. 당첨이면 이미 차단이 풀려 있다 |
-| `TEST_ROLLS` | blocked.js ([모의 판정]) | `{ ok, times, rows:[{minutes, prob, passRate, fail5}] }`. 상태·기록 안 바꿈. 횟수는 config(`testRollTimes`)가 정함 |
 | `GET_SESSION` | timer.js | `{ sessionEndAt, warnBeforeEndSec }` |
 | `GET_SETTINGS` | options.js | `{ settings, rules, defaults }` |
 | `SET_SETTINGS` `{settings}` | options.js | `{ ok, settings }` 또는 `{ ok:false, errors:[] }` |
@@ -700,6 +699,11 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 - `reloadYoutubeTabs()` → `reloadSiteTabs(site)`. 끝난 사이트의 탭만 새로고침 (숙제 하나 해결)
 - **아직 실제 브라우저 확인 안 함** (자동 문법 검사도 못 돌림)
 - 다음: 2단계 설정 화면 사이트 선택 / 3단계 timer.js 모든 사이트 (manifest, 물어볼 것) / 4단계 기록에 site 칸 (SQL)
+
+### 2026-11-19 [Claude Code]
+- 1·2단계 브라우저에서 확인됨 (사용자: "따로 구분돼") → 커밋 `dbbf810`
+- **모의 판정 제거** (사용자 요청). `testRolls`, `TEST_ROLLS`, 차단 화면 버튼·표, `testRollMinutes`/`testRollTimes`.
+  주사위 함수 `rollDice`는 시도·찬스가 같이 쓰므로 남김
 
 ---
 

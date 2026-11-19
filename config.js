@@ -12,7 +12,7 @@ const CONFIG = {
   //
   // 아직 여기 안 따라오는 곳 (다음 작업):
   //   manifest.json의 content_scripts (남은 시간 표시), background.js의 reloadYoutubeTabs
-  blockedSites: ['youtube.com', 'naver.com', 'instagram.com'],
+  blockedSites: ['youtube.com', 'instagram.com'],
 
   // ── 어떤 곡선을 쓸지 고르는 스위치 ──────────────────────────────
   // 'log'     : 초반에 확 오르고 나중엔 완만해짐
@@ -71,11 +71,6 @@ const CONFIG = {
   shareCode: '',
 
   // ── 곡선 종류와 상관없이 항상 적용되는 값 ──────────────────────
-  // ── 모의 판정 (테스트용, 차단 화면의 [모의 판정] 버튼) ─────────
-  // 이 시점(분)들의 확률로 각각 testRollTimes번 주사위를 굴려 실제 통과율을 본다
-  testRollMinutes: [10, 20, 30, 40, 60, 80, 120],
-  testRollTimes: 10000,
-
   maxProb: 85,         // 확률 상한(%). 아무리 오래 기다려도 이 값을 넘지 않는다
   dailyLimit: 60,      // 하루 총 이용 한도(분)
 
