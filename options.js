@@ -160,7 +160,38 @@ function refreshView() {
   updateCurveGroups();
   updateDailyLimitHint();
   updatePreviewUsedSlider();
+  updatePresetButtons();
   drawPreview();
+}
+
+
+// 지금 화면 값이 어느 프리셋과 똑같으면 그 버튼만 aria-pressed="true" (CSS가 파랗게 칠한다).
+//
+// '마지막으로 누른 버튼'을 기억하지 않고 값을 비교하는 이유:
+// 프리셋을 누른 뒤 슬라이더를 만지면 더는 그 프리셋이 아닌데 버튼만 파랗게 남으면 헷갈린다.
+// 저장된 설정을 불러왔을 때도 같은 값이면 저절로 표시된다.
+function updatePresetButtons() {
+  const form = collectForm();
+
+  for (const button of document.querySelectorAll('[data-preset]')) {
+    const preset = PRESETS[button.dataset.preset];
+    button.setAttribute('aria-pressed', matchesPreset(form, preset) ? 'true' : 'false');
+  }
+}
+
+
+// 프리셋에 적힌 항목이 전부 같은가. 점은 높이(y)만 비교한다 (시간대 x는 프리셋이 안 바꾼다)
+function matchesPreset(form, preset) {
+  for (const key of Object.keys(preset)) {
+    if (key === 'points') {
+      const same = preset.points.every((point, i) =>
+        form.points[i] && Math.abs(form.points[i].y - point.y) < 0.01);
+      if (!same) return false;
+    } else if (Math.abs(Number(form[key]) - preset[key]) > 1e-9) {
+      return false;
+    }
+  }
+  return true;
 }
 
 
@@ -536,6 +567,7 @@ function hookPreviewDrag() {
     if (draggingIndex < 0) return;
     draggingIndex = -1;
     drawPreview();
+    updatePresetButtons();   // 점을 옮겼으면 프리셋과 달라졌을 수 있다
   };
 
   canvas.addEventListener('pointerup', stopDragging);

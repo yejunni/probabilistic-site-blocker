@@ -652,7 +652,8 @@ input[type="radio"] {
   font-weight: 700;
 }
 
-.preset-group button[data-preset="normal"] {
+/* 지금 값과 똑같은 프리셋만 칠한다 (options.js updatePresetButtons가 aria-pressed를 붙인다) */
+.preset-group button[aria-pressed="true"] {
   border-color: var(--accent);
   color: #fff;
   background: var(--accent);
@@ -1489,7 +1490,7 @@ code {
   #attemptBtn,
   #startBtn,
   #saveBtn,
-  .preset-group button[data-preset="normal"],
+  .preset-group button[aria-pressed="true"],
   .site-tabs button[aria-pressed="true"] {
     color: #10253f;
   }
