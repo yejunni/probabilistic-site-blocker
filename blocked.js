@@ -81,7 +81,9 @@ function ask(message) {
 // 상태는 두 종류다.
 //   평소(base)   : 확률로 정해지고 계속 반복된다. a-wait / a-calm / a-perk
 //   반응(reaction): 일이 생겼을 때 한 번만 돈다. a-pass / a-fail / a-shrug / a-no
-//                  끝나면(animationend) 평소 상태로 돌아간다.
+//                  동작이 끝나면(animationend) 바로 평소로 가지 않고 '여운'을 둔다.
+//   여운(hold)    : 반응의 마지막 모습을 이어받아 잠시 더 머문다. a-happy / a-down
+//                  머무는 시간은 config.js의 toonHoldMs. 통과는 -1이라 들어갈 때까지 계속.
 // ─────────────────────────────────────────────────────────────
 
 const toonEl = document.getElementById('toon');
@@ -91,14 +93,28 @@ const toonSproutEl = document.getElementById('toonSprout');
 // 상태 class → 그림 번호 (images/navy-07-body.png 의 07)
 const TOON_PICTURE = {
   'a-wait': '07', 'a-calm': '02', 'a-perk': '04',
-  'a-pass': '06', 'a-fail': '01', 'a-shrug': '08', 'a-no': '03'
+  'a-pass': '06', 'a-fail': '01', 'a-shrug': '08', 'a-no': '03',
+  // 여운은 앞 동작의 그림을 그대로 이어받는다 (그림이 안 바뀌어야 안 깜빡인다)
+  'a-happy': '06', 'a-down': '01'
+};
+
+// 반응 동작이 끝난 뒤 이어서 보여줄 '여운'.
+//   hold: 이어서 붙일 class. null이면 마지막 자세로 멈춰 있는다(both 덕분)
+//   ms  : 그 상태로 머무는 시간. -1이면 다음 일이 생길 때까지 계속
+const TOON_AFTER = {
+  'a-pass':  { hold: 'a-happy', ms: CONFIG.toonHoldMs.pass },
+  'a-fail':  { hold: 'a-down',  ms: CONFIG.toonHoldMs.fail },
+  'a-shrug': { hold: null,      ms: CONFIG.toonHoldMs.shrug },
+  'a-no':    { hold: null,      ms: CONFIG.toonHoldMs.no }
 };
 
 let toonBase = null;        // 확률로 정해지는 평소 상태
-let toonReaction = null;    // 지금 한 번 도는 중인 반응. 없으면 null
+let toonReaction = null;    // 지금 반응 중인가 (여운까지 포함). 없으면 null
+let toonHolding = false;    // 동작은 끝나고 여운만 남은 상태인가
 let toonShown = null;       // 지금 #toon에 실제로 붙어 있는 class
 let toonEndedParts = new Set();   // 반응 중 움직임이 끝난 부분 (몸 / 새싹)
 let toonStillTimer = null;  // 움직임 줄이기 모드에서 반응을 끝낼 타이머
+let toonHoldTimer = null;   // 여운을 끝낼 타이머
 let wasOutOfLimit = false;  // 직전에 남은 한도가 0이었는지 (0이 '되는 순간'만 고개를 젓게)
 
 
@@ -167,21 +183,43 @@ function updateToon(status) {
 // 한 번만 도는 반응을 시작한다.
 function playToonReaction(name) {
   toonReaction = name;
+  toonHolding = false;
   toonEndedParts.clear();
   clearTimeout(toonStillTimer);
+  clearTimeout(toonHoldTimer);   // 앞 반응의 여운이 남아 있으면 끊는다
   showToon(name, true);
 
   // 움직임 줄이기를 켠 사람은 애니메이션이 없어서 animationend가 오지 않는다.
-  // 그대로 두면 반응 그림에서 영영 안 돌아오므로, 잠깐 보여주고 직접 끝낸다.
+  // 그대로 두면 반응 그림에서 영영 안 돌아오므로, 잠깐 보여주고 직접 넘어간다.
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    toonStillTimer = setTimeout(finishToonReaction, CONFIG.toonStillReactionMs);
+    toonStillTimer = setTimeout(startToonHold, CONFIG.toonStillReactionMs);
   }
 }
 
 
-function finishToonReaction() {
+// 반응 동작이 끝났다. 바로 평소로 돌아가지 않고 여운을 둔다.
+// 통과는 여기서 멈춰 있다가, 시간을 고르고 사이트로 넘어가면서 화면째 사라진다.
+function startToonHold() {
   clearTimeout(toonStillTimer);
+  if (toonHolding) return;
+  toonHolding = true;
+
+  const plan = TOON_AFTER[toonReaction];
+  if (!plan) { endToonReaction(); return; }
+
+  // 여운 class로 바꾼다. 그림 번호가 같아서 그림은 안 바뀌고 움직임만 바뀐다
+  if (plan.hold) showToon(plan.hold);
+
+  if (plan.ms < 0) return;   // 계속 머문다
+  toonHoldTimer = setTimeout(endToonReaction, plan.ms);
+}
+
+
+function endToonReaction() {
+  clearTimeout(toonStillTimer);
+  clearTimeout(toonHoldTimer);
   toonReaction = null;
+  toonHolding = false;
   if (toonBase) showToon(toonBase);
 }
 
@@ -192,7 +230,7 @@ function finishToonReaction() {
 // (실패: 몸 1.2초, 새싹 1.4초). 먼저 끝난 쪽에서 돌아가면 새싹이 중간에 뚝 끊기므로
 // 둘 다 끝났을 때 돌아간다. (반복 애니메이션은 끝나지 않아 여기 오지 않는다)
 toonEl.addEventListener('animationend', (event) => {
-  if (!toonReaction) return;
+  if (!toonReaction || toonHolding) return;   // 여운은 반복이라 여기 걸리면 안 된다
 
   const part = event.target.classList.contains('toon-move') ? 'move'
              : event.target.classList.contains('toon-sprout') ? 'sprout'
@@ -200,7 +238,7 @@ toonEl.addEventListener('animationend', (event) => {
   if (!part) return;
 
   toonEndedParts.add(part);
-  if (toonEndedParts.size === 2) finishToonReaction();
+  if (toonEndedParts.size === 2) startToonHold();
 });
 
 

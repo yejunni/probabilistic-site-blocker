@@ -158,21 +158,17 @@ input[type="radio"] {
   transform: translateX(-50%);
 }
 
-.yj-mark {
-  display: inline-grid;
+/*
+  머리말 마크. 예전 'YJ' 글자 타일을 새싹이 아이콘으로 바꿨다.
+  그림이 민트 타일 위에 그려져 있어 라이트·다크 어느 쪽에서도 보인다.
+  살짝 기울인 것과 산호색 그림자는 전에 쓰던 느낌을 그대로 남긴 것.
+*/
+.brand-mark {
   width: 38px;
   height: 38px;
-  place-items: center;
-  border: 2px solid var(--accent);
+  flex: 0 0 auto;
   border-radius: 11px 4px 11px 4px;
-  color: var(--accent);
-  background: var(--surface-solid);
   box-shadow: 4px 4px 0 var(--coral);
-  font-size: 12px;
-  font-weight: 900;
-  font-style: italic;
-  letter-spacing: -0.08em;
-  line-height: 1;
   transform: rotate(-3deg);
 }
 
@@ -351,12 +347,59 @@ input[type="radio"] {
   100% { opacity: 1; transform: scale(1) rotate(0); }
 }
 
+/*
+  통과했을 때 카드가 길어지지 않게 하는 칸.
+
+  전에는 시간 고르기(#durations)가 확률 아래에 '덧붙어서' 카드가 쑥 길어졌다.
+  이제 확률 묶음(.stage-main)과 시간 고르기를 같은 칸에 겹쳐 두고 서로 교체한다.
+  칸 높이를 미리 잡아 두었으므로 무엇이 보이든 카드 높이는 그대로다.
+
+  높이를 px로 박은 이유: 둘 중 큰 쪽에 맞춰 두어야 화면이 안 뛴다.
+  확률 묶음 ≈ 300px, 시간 고르기 ≈ 300px 라서 여유를 둬 340으로 잡았다.
+*/
+.card-stage {
+  display: grid;
+  align-items: center;
+  min-height: 340px;
+}
+
+.card-stage > .stage-main,
+.card-stage > #durations {
+  grid-area: 1 / 1;   /* 둘을 같은 칸에 포개 둔다 */
+}
+
+.stage-main {
+  transition: opacity 0.26s ease, transform 0.26s ease;
+}
+
+/*
+  시간 고르기가 열리면 확률 묶음은 사라지되 자리는 지킨다.
+  display:none으로 지우면 칸 높이가 무너져 카드가 다시 뛴다.
+  (#durations를 켜고 끄는 건 여전히 blocked.js의 hidden 속성이다. 여기서는 보고만 있다)
+*/
+.blocked-shell:has(#durations:not([hidden])) .stage-main {
+  opacity: 0;
+  visibility: hidden;
+  transform: scale(0.96);
+}
+
+@keyframes durations-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
 #durations {
-  margin: 14px auto 0;
+  margin: 0;
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--surface-solid) 82%, transparent);
+  animation: durations-in 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-main { transition: none; }
+  #durations { animation: none; }
 }
 
 #durations > p:first-child {
@@ -489,11 +532,25 @@ input[type="radio"] {
   gap: 16px;
 }
 
-.title-lockup .yj-mark {
+.title-lockup .brand-mark {
   width: 46px;
   height: 46px;
+}
+
+/*
+  설정 화면의 새싹이. 안 움직이므로 몸통·새싹 합본 한 장을 배경으로 깐다.
+  다크 모드 교체도 CSS가 하므로 options.js는 손댈 게 없다.
+*/
+.options-toon {
+  display: block;
+  width: 86px;
+  height: 115px;
   flex: 0 0 auto;
-  font-size: 14px;
+  background: url("images/navy-05.png") center / contain no-repeat;
+}
+
+@media (prefers-color-scheme: dark) {
+  .options-toon { background-image: url("images/cream-05.png"); }
 }
 
 .back-link {
@@ -518,9 +575,17 @@ input[type="radio"] {
   text-align: right;
 }
 
+/* 새싹이 + 설명. 설명은 오른쪽 끝에 맞추고 새싹이가 그 왼쪽에 선다 */
 .options-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.options-meta > div {
   display: grid;
   justify-items: end;
+  text-align: right;
 }
 
 .settings-section {
@@ -867,7 +932,12 @@ code {
   display: grid;
   grid-template-columns: 1fr minmax(0, 650px) 1fr;
   gap: 28px;
-  align-items: center;
+  /*
+    start로 두어야 세 칸의 윗선이 맞는다.
+    center였을 때는 칸마다 내용 길이가 달라서 찬스는 아래로 내려가고
+    기록은 위에 붙어, 세 덩어리가 제각각 떠 있는 것처럼 보였다.
+  */
+  align-items: start;
   width: 100%;
 }
 
@@ -883,11 +953,14 @@ code {
   grid-row: 1;
 }
 
-/* 왼쪽 찬스 칸. 오른쪽 기록 칸과 같은 모양 */
+/*
+  왼쪽 찬스 칸. 오른쪽 기록 칸과 같은 모양·같은 폭(--side-col).
+  폭이 다르면 가운데 카드가 가운데로 안 보인다.
+*/
 .chance-box {
   grid-column: 1;
   justify-self: end;
-  width: min(100%, 300px);
+  width: min(100%, var(--side-col, 340px));
   padding: 22px 20px 18px;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -898,6 +971,8 @@ code {
 #chanceInfo {
   color: var(--muted);
   font-size: 12px;
+  /* 한글은 자동 하이픈이 없어서, 없으면 "30분"의 30과 분이 줄바꿈으로 갈라진다 */
+  word-break: keep-all;
 }
 
 #chanceResult.pass { color: var(--accent-strong); font-weight: 700; }
@@ -907,7 +982,7 @@ code {
 .blocked-stats {
   grid-column: 3;
   justify-self: start;
-  width: min(100%, 400px);
+  width: min(100%, var(--side-col, 340px));
   padding: 22px 20px 18px;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -1055,8 +1130,13 @@ code {
   }
 
   .options-meta {
-    justify-items: start;
     margin-top: 16px;
+  }
+
+  /* 좁은 화면에서는 설명을 왼쪽 맞춤으로 */
+  .options-meta > div {
+    justify-items: start;
+    text-align: left;
   }
 
   .settings-section,
@@ -1200,6 +1280,8 @@ code {
 .toon.a-fail  { --sprout-pivot: 23.5%; }   /* 01 */
 .toon.a-shrug { --sprout-pivot: 21.1%; }   /* 08 */
 .toon.a-no    { --sprout-pivot: 26.2%; }   /* 03 */
+.toon.a-happy { --sprout-pivot: 27.5%; }   /* 06 — 통과 그림 그대로 이어받는다 */
+.toon.a-down  { --sprout-pivot: 23.5%; }   /* 01 — 실패 그림 그대로 이어받는다 */
 
 /* ---- 기다리는 중 / 오르는 중 : 느린 숨 (계속 반복) ---- */
 @keyframes toon-breathe {
@@ -1288,6 +1370,27 @@ code {
 .a-fail .toon-move   { animation: toon-deflate 1.2s ease-out both; }
 .a-fail .toon-sprout { animation: toon-droop 1.4s ease-out both; }
 
+/* ---- 여운 (반복) ----
+   한 번 도는 반응이 끝나도 바로 평소로 돌아가면 너무 금방 지나간다.
+   끝난 자리에서 그대로 이어받아 잠시 더 머문다. 시작 모습을 앞 동작의
+   마지막 모습과 똑같이 맞춰야 바뀌는 순간 튀지 않는다. */
+
+/* 통과한 뒤 — 시간을 고르는 동안 계속 들떠 있다. toon-jump는 제자리에서 끝난다 */
+@keyframes toon-happy {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  45%      { transform: translateY(-9px) scale(0.98, 1.03); }
+}
+.a-happy .toon-move   { animation: toon-happy 1.05s ease-in-out infinite; }
+.a-happy .toon-sprout { animation: toon-wag 0.52s ease-in-out infinite -0.1s; }
+
+/* 실패한 뒤 — 주저앉은 채로 느리게 숨만 쉰다. toon-deflate의 마지막 모습에서 이어받는다 */
+@keyframes toon-down {
+  0%, 100% { transform: translateY(12px) scale(1.07, 0.92); }
+  50%      { transform: translateY(14px) scale(1.08, 0.91); }
+}
+.a-down .toon-move   { animation: toon-down 2.8s ease-in-out infinite; }
+.a-down .toon-sprout { transform: rotate(21deg); }   /* toon-droop이 끝난 각도 그대로 */
+
 /* ---- 찬스 꽝 : 어깨 으쓱 (한 번) ---- */
 @keyframes toon-shrug {
   0%   { transform: translateY(0) rotate(0deg); }
@@ -1329,6 +1432,9 @@ code {
 .toon-stage:has(.a-perk) .toon-shadow { animation: toon-shadow-perk 0.92s ease-in-out infinite; }
 .toon-stage:has(.a-pass) .toon-shadow { animation: toon-shadow-jump 1.25s cubic-bezier(0.33, 0.9, 0.45, 1) both; }
 .toon-stage:has(.a-fail) .toon-shadow { animation: toon-shadow-flat 1.2s ease-out both; }
+.toon-stage:has(.a-happy) .toon-shadow { animation: toon-shadow-perk 1.05s ease-in-out infinite; }
+/* 실패 여운 동안 그림자는 넓게 퍼진 채로 멈춰 있는다 */
+.toon-stage:has(.a-down) .toon-shadow { transform: translateX(-50%) scale(1.1); }
 
 /* 움직임 줄이기를 켠 사람에게는 캐릭터도 멈춘다.
    (파일 맨 아래 규칙이 모든 애니메이션을 끄지만, 캐릭터는 여기서도 확실히 해 둔다) */

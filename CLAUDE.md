@@ -723,6 +723,12 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
   - **아이콘은 보류**: zip에 `icons/`가 없음. 없는 파일을 manifest에 적으면 확장이 로드되지 않는다
 - **테스트 칸 다시 만듦** (사용자 요청, 캐릭터 구간 확인용). 위 "실행 / 테스트 방법" 참고.
   사용자 선택: 기다린 시간 + 오늘 사용량 / zip에서 자동으로 끄기
+- **디자인 수정 (사용자 작업)** — 배치와 여운
+  - 'YJ' 글자 마크 → 새싹이 아이콘 `images/mark.png` (`.brand-mark`). 설정 화면 머리말에 물음표 새싹이 `navy/cream-05.png` (`.options-toon`, CSS 배경)
+  - 차단 카드: 확률 묶음(`.stage-main`)과 시간 고르기(`#durations`)를 `.card-stage` 한 칸에 포갬 → 통과해도 카드 높이가 안 변함
+    (`.stage-main`은 `visibility:hidden`으로 자리를 지킨다. `#durations`는 여전히 `hidden` 속성)
+  - 세 칸 윗선 맞춤(`align-items: start`), 찬스·기록 칸 폭 통일(340px)
+  - 캐릭터 '여운': 반응 뒤 바로 평소로 안 돌아가고 `a-happy`(통과, 계속) / `a-down`(실패 3.5초) 등. 시간은 config `toonHoldMs`
 
 ---
 

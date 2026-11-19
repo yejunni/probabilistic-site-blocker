@@ -19,7 +19,7 @@
   <div class="blocked-layout">
   <main class="blocked-shell">
     <div class="blocked-brandbar">
-      <span class="yj-mark" aria-label="YJ">YJ</span>
+      <img class="brand-mark" src="images/mark.png" alt="새싹이" width="128" height="128">
       <span class="brand-divider"></span>
       <span class="youtube-lockup">
         <span class="youtube-icon"></span>
@@ -44,39 +44,48 @@
       </div>
     </div>
 
-    <p id="prob">--%</p>
-    <p id="info">불러오는 중...</p>
-    <p id="syncInfo"></p>
+    <!--
+      확률 묶음과 시간 고르기를 같은 칸에 포개 둔다.
+      통과하면 시간 고르기가 확률 '자리로 들어온다'. 아래에 덧붙지 않으므로
+      카드 높이가 그대로라 화면이 안 뛴다. 높이는 extension.css의 .card-stage가 잡는다.
+    -->
+    <div class="card-stage">
+      <div class="stage-main">
+        <p id="prob">--%</p>
+        <p id="info">불러오는 중...</p>
+        <p id="syncInfo"></p>
 
-    <button id="attemptBtn">시도하기</button>
+        <button id="attemptBtn">시도하기</button>
+      </div>
+
+      <!-- 통과했을 때만 보이는 시간 정하기 -->
+      <div id="durations" hidden>
+        <p>이번에는 몇 분을 사용할까요?</p>
+        <!--
+          +1 / -1 버튼은 두지 않는다. 숫자 입력칸의 화살표(↑↓)와
+          키보드 방향키가 그 일을 한다.
+        -->
+        <div id="stepper">
+          <div class="step-row">
+            <button data-step="5">+5</button>
+            <button data-step="10">+10</button>
+          </div>
+          <div class="step-value">
+            <input id="minutesInput" type="number" min="1" value="10">
+            <span>분</span>
+          </div>
+          <div class="step-row">
+            <button data-step="-5">-5</button>
+            <button data-step="-10">-10</button>
+          </div>
+        </div>
+        <p id="minutesHint"></p>
+        <button id="startBtn">시작하기</button>
+      </div>
+    </div>
 
     <!-- 판정 결과. blocked.js가 pass / fail 클래스를 붙인다 -->
     <div id="result"></div>
-
-    <!-- 통과했을 때만 보이는 시간 정하기 -->
-    <div id="durations" hidden>
-      <p>이번에는 몇 분을 사용할까요?</p>
-      <!--
-        +1 / -1 버튼은 두지 않는다. 숫자 입력칸의 화살표(↑↓)와
-        키보드 방향키가 그 일을 한다.
-      -->
-      <div id="stepper">
-        <div class="step-row">
-          <button data-step="5">+5</button>
-          <button data-step="10">+10</button>
-        </div>
-        <div class="step-value">
-          <input id="minutesInput" type="number" min="1" value="10">
-          <span>분</span>
-        </div>
-        <div class="step-row">
-          <button data-step="-5">-5</button>
-          <button data-step="-10">-10</button>
-        </div>
-      </div>
-      <p id="minutesHint"></p>
-      <button id="startBtn">시작하기</button>
-    </div>
 
     <div class="settings-row">
       <button id="settingsBtn">설정</button>
