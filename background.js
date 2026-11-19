@@ -477,8 +477,7 @@ async function saveSettings(site, changes) {
   await writeSettings(site, checked.settings);
 
   // 설정이 바뀌었으니 차단 규칙도 다시 만든다.
-  // 지금은 blockedSites가 config.js에만 있어 결과가 같지만, 나중에 설정 화면에서
-  // 사이트를 바꾸게 되면 여기서 바로 반영된다. 그때 부르는 곳을 찾아다니지 않으려고 미리 넣어 둔다.
+  // (사이트 목록은 saveSiteList가 따로 다시 세우므로 여기서는 결과가 같다. 안전하게 남겨 둔다)
   await rebuildBlockRules();
 
   // 공유 중이면 방금 저장한 값을 서버에도 올린다.
@@ -603,30 +602,135 @@ function cleanPoints(value, errors) {
 // 차단 풀기 / 다시 막기
 // ─────────────────────────────────────────────────────────────
 
-// 차단할 사이트 목록. ★ 목록을 읽는 통로는 여기 하나뿐이다.
+// ─── 사이트 목록 ───────────────────────────────────────────────
 //
-// 지금은 config.js의 blockedSites를 그대로 읽는다. 설정 화면에서 바꾸게 되면
-// 이 함수만 loadSettings()를 읽도록 고치면 된다. (loadSettings / saveSettings와 같은 생각)
+// 목록은 storage.sync의 'siteList' 칸 하나에 이렇게 들어 있다.
+//   [ { site: 'youtube.com', on: true }, { site: 'naver.com', on: false }, ... ]
+//   on: false = 목록에는 있지만 차단은 꺼 둔 사이트 (설정·기다린 시간은 그대로 남아 있다)
 //
-// 일반 변수에 담아두지 않고 부를 때마다 읽는다. 워커가 잠들었다 깨도 늘 같은 값이 나온다.
+// 아직 설정 화면에서 한 번도 안 건드렸으면 칸이 비어 있다. 그때는 config.js의
+// blockedSites(처음 목록)를 전부 켜진 채로 쓴다.
 //
-// 형식이 틀린 값('https://naver.com', 'www.naver.com', 빈 칸)은 고쳐 쓰지 않고 빼고 경고만 한다.
+// ★ storage의 'siteList'를 만지는 곳은 loadSiteList / saveSiteList 둘뿐이다.
+//   (loadSettings / saveSettings와 같은 생각)
+// 공유 코드로 다른 기기와 맞추지는 않는다 (사용자 결정). 같은 구글 계정끼리만 sync로 맞는다.
+
+const SITE_LIST_KEY = 'siteList';
+
+// 소문자.점.으로.이어진.이름 (예: naver.com, m.blog.naver.com)
+const DOMAIN_SHAPE = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
+
+
+// 목록을 읽어 온다. 일반 변수에 담아두지 않고 부를 때마다 읽는다 (워커가 잠들어도 같은 값).
+//
+// 형식이 틀린 값은 빼고 경고만 한다.
 // 이유: 크롬은 규칙 하나라도 틀리면 updateDynamicRules 전체를 거절한다.
 //       오타 하나 때문에 유튜브 차단까지 통째로 풀리면 안 된다.
-//       몰래 고쳐 주지 않는 건, 차단 화면(blocked.js)이 config.js 목록과
-//       글자 그대로 비교하기 때문이다. 고친 값과 적힌 값이 다르면 어긋난다.
-function getBlockedSites() {
-  const domainShape = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;   // 소문자.점.으로.이어진.이름
-  const sites = [];
+async function loadSiteList() {
+  const saved = (await STORE.get(SITE_LIST_KEY))[SITE_LIST_KEY];
+  const raw = Array.isArray(saved)
+    ? saved
+    : (CONFIG.blockedSites || []).map(site => ({ site, on: true }));
 
-  for (const site of CONFIG.blockedSites || []) {
-    if (typeof site !== 'string' || !domainShape.test(site) || site.startsWith('www.')) {
+  const list = [];
+  for (const item of raw) {
+    const site = item && item.site;
+    if (typeof site !== 'string' || !DOMAIN_SHAPE.test(site) || site.startsWith('www.')) {
       console.warn(`[차단 목록] '${site}'는 건너뜁니다. www. 없이 'naver.com'처럼 소문자 도메인만 적으세요`);
       continue;
     }
-    if (!sites.includes(site)) sites.push(site);   // 같은 게 두 번 있으면 하나만
+    if (list.some(other => other.site === site)) continue;   // 같은 게 두 번 있으면 하나만
+    list.push({ site, on: item.on !== false });
   }
-  return sites;
+  return list;
+}
+
+
+// 목록을 저장하고, 바뀐 목록대로 규칙을 곧바로 다시 세운다.
+//   rebuildBlockRules: 켜진 사이트만 차단 규칙
+//   reconcile        : 통과 규칙 번호가 목록 순서를 따르므로, 사이트를 빼서 순서가
+//                      당겨지면 이용 중인 사이트의 통과 규칙을 다시 세워야 한다
+async function saveSiteList(list) {
+  await STORE.set({ [SITE_LIST_KEY]: list });
+  await rebuildBlockRules();
+  await reconcile();
+}
+
+
+// 목록에 있는 사이트 이름만 (켜짐·꺼짐 상관없이). ★ 목록을 읽는 통로.
+//
+// 꺼진 사이트도 넣는 이유: 꺼져 있어도 설정 화면에서 그 사이트 설정을 고치거나,
+// 끄기 전에 시작한 이용이 끝날 때(알람) 그 사이트를 찾을 수 있어야 한다.
+async function getBlockedSites() {
+  return (await loadSiteList()).map(item => item.site);
+}
+
+
+// 사용자가 친 글자를 'naver.com' 모양으로 다듬는다. 안 되면 null.
+//   'https://www.Naver.com/news?x=1' → 'naver.com'
+//
+// m. 같은 다른 앞부분은 떼지 않는다. 'm.naver.com'만 막고 싶은 사람도 있을 수 있어서.
+// (requestDomains는 서브도메인까지 잡으므로 'naver.com'을 넣으면 m.naver.com도 막힌다)
+function normalizeSite(text) {
+  let site = String(text || '').trim().toLowerCase();
+  site = site.replace(/^[a-z]+:\/\//, '');   // https:// 떼기
+  site = site.split(/[\/?#]/)[0];            // 뒤의 /news?x=1 떼기
+  site = site.replace(/:\d+$/, '');          // :443 같은 포트 떼기
+  site = site.replace(/^www\./, '');         // www. 떼기
+  return DOMAIN_SHAPE.test(site) ? site : null;
+}
+
+
+// [사이트 추가]. 성공하면 { ok, site, sites }, 실패하면 { ok:false, error }
+async function addSite(input) {
+  const site = normalizeSite(input);
+  if (!site) {
+    return { ok: false, error: `'${input}'은(는) 사이트 주소로 읽을 수 없습니다. 예: naver.com` };
+  }
+
+  const list = await loadSiteList();
+  if (list.some(item => item.site === site)) {
+    return { ok: false, error: `${site}은(는) 이미 목록에 있습니다` };
+  }
+  if (list.length >= CONFIG.maxSites) {
+    return { ok: false, error: `사이트는 ${CONFIG.maxSites}개까지 넣을 수 있습니다` };
+  }
+
+  list.push({ site, on: true });
+  await saveSiteList(list);
+  return { ok: true, site, sites: list };
+}
+
+
+// [목록에서 빼기]. 마지막 하나는 못 뺀다 (차단 화면·설정 화면이 '목록의 첫 번째'를 기본으로 쓴다).
+//
+// 그 사이트의 기다린 시간·오늘 사용량·설정은 지우지 않는다.
+// 지우면 '뺐다가 다시 넣기'로 오늘 사용량을 0으로 되돌리는 우회 방법이 생긴다.
+async function removeSite(site) {
+  const list = await loadSiteList();
+  if (list.length <= 1) {
+    return { ok: false, error: '사이트가 하나뿐이라 뺄 수 없습니다. 차단을 끄려면 스위치를 쓰세요' };
+  }
+
+  const remaining = list.filter(item => item.site !== site);
+  await saveSiteList(remaining);
+  return { ok: true, sites: remaining };
+}
+
+
+// 차단 스위치 켜기/끄기.
+// 끄면 차단 규칙만 사라진다. 이용 중이었다면 그 이용은 알람이 올 때 평소처럼 끝난다.
+//
+// 이미 열려 있는 탭은 건드리지 않는다. 켠 뒤에는 그 사이트로 '새로 이동할 때'부터 막힌다.
+// (함부로 새로고침하면 쓰던 글이 날아갈 수 있어서)
+async function setSiteOn(site, on) {
+  const list = await loadSiteList();
+  const item = list.find(other => other.site === site);
+  if (!item) return { ok: false, error: '목록에 없는 사이트입니다: ' + site };
+
+  item.on = Boolean(on);
+  await saveSiteList(list);
+  return { ok: true, sites: list };
 }
 
 
@@ -637,7 +741,7 @@ function getBlockedSites() {
 // 동적 규칙은 브라우저를 껐다 켜도 남지만, 목록이 바뀌었을 수 있으니
 // 설치·시작·설정 저장 때마다 다시 만든다.
 async function rebuildBlockRules() {
-  const sites = getBlockedSites();
+  const list = await loadSiteList();
 
   // 지금 걸려 있는 차단 규칙(100~999번)을 전부 찾아서 지운다.
   // 사이트가 3개였다가 2개로 줄면 102번이 남는데, 번호를 범위로 찾아야 그것까지 지워진다.
@@ -646,8 +750,24 @@ async function rebuildBlockRules() {
     .map(rule => rule.id)
     .filter(id => id >= BLOCK_RULE_ID_START && id < ALLOW_RULE_ID_START);
 
-  const newRules = sites.map((site, index) => ({
-    id: BLOCK_RULE_ID_START + index,
+  // 켜진 사이트만 규칙을 만든다. 번호는 목록 전체에서의 순서 (꺼진 사이트 번호는 비워 둔다)
+  const newRules = [];
+  list.forEach((item, index) => {
+    if (item.on) newRules.push(makeBlockRule(item.site, BLOCK_RULE_ID_START + index));
+  });
+
+  // 지우기와 넣기를 한 번에 보낸다. 크롬이 한꺼번에 처리해서 '잠깐 아무것도 안 막히는' 틈이 없다
+  await chrome.declarativeNetRequest.updateDynamicRules({
+    removeRuleIds: oldBlockIds,
+    addRules: newRules
+  });
+}
+
+
+// 사이트 하나를 차단 화면으로 돌려보내는 규칙
+function makeBlockRule(site, id) {
+  return {
+    id,
     priority: 1,
     action: {
       type: 'redirect',
@@ -661,13 +781,7 @@ async function rebuildBlockRules() {
       requestDomains: [site],
       resourceTypes: ['main_frame']
     }
-  }));
-
-  // 지우기와 넣기를 한 번에 보낸다. 크롬이 한꺼번에 처리해서 '잠깐 아무것도 안 막히는' 틈이 없다
-  await chrome.declarativeNetRequest.updateDynamicRules({
-    removeRuleIds: oldBlockIds,
-    addRules: newRules
-  });
+  };
 }
 
 
@@ -675,14 +789,14 @@ async function rebuildBlockRules() {
 //
 // 차단 화면이 보낸 site 값을 그대로 믿지 않는다. 콘솔에서 목록에 없는 이름을
 // 보내 엉뚱한 저장 칸이나 규칙을 만들지 못하게 한다.
-function checkSite(site) {
-  return getBlockedSites().includes(site) ? site : null;
+async function checkSite(site) {
+  return (await getBlockedSites()).includes(site) ? site : null;
 }
 
 
 // 주소(예: 'https://m.naver.com/news')가 목록의 어느 사이트인지 찾는다. 없으면 null.
 // 유튜브 위에 뜨는 타이머(timer.js)는 사이트를 모르므로, 탭 주소로 알아낸다.
-function siteFromUrl(url) {
+async function siteFromUrl(url) {
   let host;
   try {
     host = new URL(url).hostname;
@@ -690,7 +804,7 @@ function siteFromUrl(url) {
     return null;
   }
   // 'naver.com' 자체이거나 '...naver.com'으로 끝나는 주소 (서브도메인)
-  return getBlockedSites().find(site => host === site || host.endsWith('.' + site)) || null;
+  return (await getBlockedSites()).find(site => host === site || host.endsWith('.' + site)) || null;
 }
 
 
@@ -700,7 +814,7 @@ function siteFromUrl(url) {
 // 사이트마다 규칙이 따로다. 유튜브를 통과해도 네이버는 막혀 있다.
 // 번호는 목록 순서대로 1000, 1001, ... (목록 순서가 바뀌면 reconcile이 정리한다)
 async function setAllowRule(site, on) {
-  const index = getBlockedSites().indexOf(site);
+  const index = (await getBlockedSites()).indexOf(site);
   if (index === -1) return;   // 목록에서 빠진 사이트. 남은 규칙은 reconcile이 지운다
 
   const ruleId = ALLOW_RULE_ID_START + index;
@@ -797,48 +911,6 @@ async function buildStatus(site) {
 // ─────────────────────────────────────────────────────────────
 // 판정 / 이용 시작 / 이용 종료
 // ─────────────────────────────────────────────────────────────
-
-// 테스트 칸 (차단 화면 맨 아래). config.js의 testTools가 true일 때만 받는다.
-//
-// changes: { elapsedMin } 또는 { usedTodayMin } (둘 다 있어도 된다)
-//   elapsedMin   : 기다린 시간을 이 분으로 만든다 → 기준 시각을 '지금 - 이만큼'으로
-//   usedTodayMin : 오늘 쓴 시간을 이 분으로 만든다. 공유 중에는 거절한다
-async function testSet(site, changes) {
-  if (!CONFIG.testTools) {
-    return { ok: false, error: '테스트 칸이 꺼져 있습니다 (config.js의 testTools)' };
-  }
-
-  // 화면 값은 믿지 않는다. 숫자인지, 0~testMaxMinutes 안인지 여기서 본다
-  const toMinutes = (value) => {
-    const num = Number(value);
-    return Number.isFinite(num) && num >= 0 && num <= CONFIG.testMaxMinutes ? num : null;
-  };
-
-  if (changes.elapsedMin !== undefined) {
-    const minutes = toMinutes(changes.elapsedMin);
-    if (minutes === null) return { ok: false, error: `기다린 시간은 0~${CONFIG.testMaxMinutes}분` };
-
-    const waitStartAt = Date.now() - minutes * 60000;
-    await saveState(site, { waitStartAt });
-
-    // 공유 중이면 서버에도 보낸다. 안 보내면 2초 동기화가 서버 값으로 바로 되돌린다.
-    // 원래 있던 함수(set_wait_start)라 새로 열리는 구멍은 없다.
-    await pushWaitStart(site, waitStartAt);
-  }
-
-  if (changes.usedTodayMin !== undefined) {
-    if (await getSharedRowId(site)) {
-      return { ok: false, error: '공유 코드를 쓰는 중에는 오늘 사용량을 바꿀 수 없습니다' };
-    }
-    const minutes = toMinutes(changes.usedTodayMin);
-    if (minutes === null) return { ok: false, error: `오늘 사용량은 0~${CONFIG.testMaxMinutes}분` };
-
-    await saveState(site, { usedTodayMin: minutes });
-  }
-
-  return { ok: true, status: await buildStatus(site) };
-}
-
 
 // 주사위 한 번. 시도하기와 찬스가 이 함수 하나를 같이 쓴다.
 //
@@ -1131,18 +1203,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 
 // 사이트(message.site)가 꼭 있어야 하는 요청들. 차단 화면이 보낸다.
-const SITE_MESSAGES = ['GET_STATUS', 'ATTEMPT', 'SYNC_SHARED', 'START_SESSION', 'CHANCE', 'TEST_SET'];
+const SITE_MESSAGES = ['GET_STATUS', 'ATTEMPT', 'SYNC_SHARED', 'START_SESSION', 'CHANCE'];
 
 async function handleMessage(message, sender) {
   // 차단 화면이 보낸 사이트가 목록에 있는지 먼저 본다. 없으면 아무것도 하지 않는다.
-  const site = checkSite(message.site);
+  const site = await checkSite(message.site);
   if (SITE_MESSAGES.includes(message.type) && !site) {
     return { ok: false, error: '차단 목록에 없는 사이트입니다: ' + message.site };
   }
 
-  // 설정 화면은 아직 사이트를 고르는 칸이 없다 (2단계에서 만든다).
-  // 그동안은 사이트를 안 보내면 목록의 첫 번째 사이트 설정을 보여주고 고친다.
-  const settingsSite = site || getBlockedSites()[0];
+  // 사이트를 안 보낸 설정 요청(옛 화면)은 목록의 첫 번째 사이트 설정을 보여주고 고친다.
+  const settingsSite = site || (await getBlockedSites())[0];
 
   switch (message.type) {
     case 'GET_STATUS':
@@ -1164,7 +1235,7 @@ async function handleMessage(message, sender) {
     //
     // timer.js는 사이트를 보내지 않는다. 그 탭의 주소로 어느 사이트인지 알아낸다.
     case 'GET_SESSION': {
-      const tabSite = siteFromUrl(sender && sender.tab ? sender.tab.url : '');
+      const tabSite = await siteFromUrl(sender && sender.tab ? sender.tab.url : '');
       if (!tabSite) return { sessionEndAt: null, warnBeforeEndSec: CONFIG.warnBeforeEndSec };
 
       const state = await loadState(tabSite);
@@ -1189,6 +1260,25 @@ async function handleMessage(message, sender) {
     case 'SET_SETTINGS':
       return await saveSettings(settingsSite, message.settings);
 
+    // ── 사이트 목록 (설정 화면 00번 칸) ──
+    // 목록과 함께 최대 개수도 보낸다. 설정 화면은 config.js를 읽긴 하지만,
+    // 판단은 background가 하는 게 원칙이라 여기서 받은 값을 쓴다.
+    case 'GET_SITES':
+      return { sites: await loadSiteList(), max: CONFIG.maxSites };
+
+    // 사용자가 친 글자 그대로 받는다. 다듬기·검사는 addSite가 한다 (화면은 우회할 수 있으니)
+    case 'ADD_SITE':
+      return await addSite(message.input);
+
+    // 아래 둘은 message.site(지금 설정 화면에서 고른 사이트)에 대해 한다.
+    case 'REMOVE_SITE':
+      if (!site) return { ok: false, error: '목록에 없는 사이트입니다: ' + message.site };
+      return await removeSite(site);
+
+    case 'SET_SITE_ON':
+      if (!site) return { ok: false, error: '목록에 없는 사이트입니다: ' + message.site };
+      return await setSiteOn(site, message.on);
+
     // 옵션 화면의 통계 칸이 부른다.
     // 어느 이름표로 묶어 볼지는 getRecordId()가 정한다 (공유 코드 우선).
     case 'GET_STATS': {
@@ -1202,13 +1292,6 @@ async function handleMessage(message, sender) {
 
     case 'CHANCE':
       return await useChance(site);
-
-    // 테스트 칸. 꺼져 있으면 testSet이 거절한다
-    case 'TEST_SET':
-      return await testSet(site, {
-        elapsedMin: message.elapsedMin,
-        usedTodayMin: message.usedTodayMin
-      });
 
     default:
       return { error: '알 수 없는 요청: ' + message.type };
@@ -1252,7 +1335,7 @@ async function reconcile() {
     .filter(id => id >= ALLOW_RULE_ID_START && id < ALLOW_RULE_ID_END);
   await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldAllowIds });
 
-  for (const site of getBlockedSites()) {
+  for (const site of await getBlockedSites()) {
     const state = await loadState(site);
 
     if (state.sessionEndAt === null) {

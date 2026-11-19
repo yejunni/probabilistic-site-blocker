@@ -42,12 +42,8 @@
 **오류 확인**: `chrome://extensions`에서 **"서비스 워커"** 링크를 누르면
 `background.js` 전용 콘솔이 열린다. Supabase 관련 경고는 `[supabase]`로 시작한다.
 
-**테스트 칸 다시 만듦** (2026-11-19, 차단 화면 맨 아래). `config.js`의 `testTools: true`일 때만 보인다.
-- 기다린 시간(분 입력, 0분으로, +10, +30)과 오늘 사용량을 **이 사이트만** 바꾼다. 메시지 `TEST_SET`
-- 기다린 시간은 공유 중이면 원래 있던 `set_wait_start`로 서버에도 보낸다 (안 보내면 2초 동기화가 되돌림)
-- **오늘 사용량은 공유 중이면 거절.** 서버 사용량을 덮어쓰는 함수(`dev_set_used_minutes`)는 남의 사용량을
-  0으로 되돌리는 구멍이라 다시 만들지 않는다
-- `testTools`가 false면 background도 거절 (콘솔 우회 차단). **배포 zip은 make_release.py가 자동으로 false로**
+**테스트 칸은 없다** (2026-11-19 마지막에 제거). 확률·캐릭터 구간 확인이 끝나서 뺐다.
+`testTools` `TEST_SET` `testSet` 차단 화면 `#testBox`, make_release.py의 config 바꾸기 단계까지 전부.
 
 ---
 
@@ -382,6 +378,9 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 | `SET_SETTINGS` `{settings}` | options.js | `{ ok, settings }` 또는 `{ ok:false, errors:[] }` |
 | `SYNC_SHARED` | blocked.js (열 때 + 2초마다) | `{ sharing, ok, status }`. 서버 값을 받아 사본에 덮어씀 |
 | `GET_STATS` `{timeZone}` | options.js, blocked.js (열 때 + 시도 직후) | `{ ok, data, recordId }`. 오늘/7일/전체 + 일별 |
+| `GET_SITES` | options.js (열 때) | `{ sites:[{site,on}], max }` |
+| `ADD_SITE` `{input}` | options.js | `{ ok, site, sites }` 또는 `{ ok:false, error }`. 다듬기·검사는 background |
+| `REMOVE_SITE` / `SET_SITE_ON` `{on}` | options.js (지금 고른 `site`에 대해) | `{ ok, sites }` 또는 `{ ok:false, error }` |
 
 `buildStatus()`가 돌려주는 것: `elapsedMin` `usedTodayMin` `remainingMin`
 `dailyLimit` `inSession` `sessionEndAt` `prob` `canAttempt` `sharing` `lastSyncAt`
@@ -405,7 +404,8 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 
 ## 차단 해제 메커니즘
 
-**차단 사이트 목록은 `config.js`의 `blockedSites` 하나.** 읽는 통로는 `getBlockedSites()` 하나
+**차단 사이트 목록은 storage.sync의 `siteList`** (`[{site, on}]`, 2026-11-19). 비어 있으면 `config.js`의 `blockedSites`(처음 목록)를 전부 켜진 채로 쓴다.
+만지는 곳은 `loadSiteList` / `saveSiteList` 둘뿐, 이름만 필요하면 `getBlockedSites()` (**async**. 꺼진 사이트도 포함)
 (형식이 틀린 값은 빼고 경고. 하나라도 틀리면 크롬이 규칙 전체를 거절하므로).
 규칙은 전부 동적 규칙이다. `rules.json`은 빈 배열.
 
@@ -419,8 +419,11 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 - `?site=` 쿼리는 크롬이 지우지 않는다 (Chromium `indexed_rule.cc`가 `base_url.Resolve`로 붙임)
 - `blocked.js`는 `?site=`가 **목록에 있을 때만** 믿는다. 아니면 첫 번째. 엉뚱한 곳으로 돌려보내지 않게
 - ~~통과 한 번이면 목록 전체가 열린다~~ → **사이트별로 바뀜** (아래 "사이트별 분리")
-- `blockedSites`는 아직 `SETTING_RULES`에 없다. 넣으면 storage 값이 config.js를 덮어써서
-  config.js를 고쳐도 반영이 안 된다. 설정 화면을 만들 때 `getBlockedSites()`만 `loadSettings`로 바꿀 것
+- **설정 화면에서 한 번이라도 사이트를 추가·삭제·끄기 하면 `config.js`의 `blockedSites`를 고쳐도 반영되지 않는다** (storage의 `siteList`가 우선)
+- 꺼진 사이트(`on:false`)는 차단 규칙만 안 만든다. 상태·설정·통과 규칙 번호는 그대로
+- `saveSiteList`는 저장 후 `rebuildBlockRules` + `reconcile` (사이트를 빼면 통과 규칙 번호가 당겨지므로)
+- 빼도 그 사이트의 상태·설정은 **지우지 않는다** (빼고 다시 넣어 사용량을 0으로 만드는 우회 방지). 마지막 하나는 못 뺀다
+- `blocked.js`는 `?site=`가 도메인 모양인지만 본다. 목록에 있는지는 background의 `checkSite`가 매번 확인
 
 `setAllowRule()`은 항상 `removeRuleIds: [ALLOW_RULE_ID]`를 먼저 넣는다.
 같은 id의 규칙이 이미 있으면 오류가 나기 때문이다.
@@ -490,7 +493,7 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 
 - **차단 도메인이 아직 다 안 모였다.** 차단·통과 규칙은 `config.js`의 `blockedSites`로 모았지만(2026-11-16),
   아래 두 곳은 여전히 유튜브 고정이다:
-  - `manifest.json`의 `content_scripts.matches` → 다른 사이트엔 남은 시간이 안 뜬다
+  - ~~`manifest.json`의 `content_scripts.matches`~~ → `http://*/*`, `https://*/*`로 (2026-11-19). timer.js는 목록에 없는 사이트에서 아무것도 안 한다
   - ~~`reloadYoutubeTabs()`~~ → `reloadSiteTabs(site)`로 해결 (2026-11-16)
   - (꾸미기) 차단 화면의 유튜브 아이콘
 - **프로필·계정 전환으로 우회할 수 있다.** 확장은 자기가 설치된 프로필 안에서만
@@ -732,6 +735,20 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 
 ---
 
+### 2026-11-19 [Claude Code] — 사이트 켜기/끄기 + 추가/삭제
+- 사용자: "naver 같은 거 아예 차단 안 하고 싶어도 선택지가 없다" + "사이트를 쉽게 추가"
+- 목록을 `config.js` → storage.sync `siteList`로. 설정 화면 00번 칸에 스위치 / [목록에서 빼기] / 입력칸 + [사이트 추가]
+  - 사용자 결정: **끌 때만 확인창** / 타이머도 모든 사이트(manifest `content_scripts.matches` 변경, 허락받음) / 목록은 **공유 코드로 안 맞춤** (SQL 수정 없음)
+  - `getBlockedSites` `checkSite` `siteFromUrl`이 async가 됨 → 부르는 곳 전부 await
+  - 입력은 background `normalizeSite`가 다듬는다 (`https://www.Naver.com/news` → `naver.com`). 최대 `maxSites`(20)
+- **자주 쓰는 사이트 버튼**: 입력칸 아래 `+ naver.com` 등 (`config.js`의 `suggestedSites`). 이미 목록에 있으면 안 보임
+  - `chzzk.naver.com`처럼 목록의 다른 사이트와 겹치는 서브도메인은 넣지 않았다 (두 차단 규칙이 같이 걸려 어느 쪽 ?site=로 갈지 애매)
+- **테스트 칸 제거** (사용자 요청, 마무리). 위 "실행 / 테스트 방법" 참고
+- 문법 검사: node가 없어 **Edge headless**로 화면별 스크립트를 올려 SyntaxError만 잡음 → 전부 OK
+- **아직 실제 브라우저 확인 안 함**
+
+---
+
 ## 보고서용 요약
 
 **한 줄 소개**: 유튜브 접속을 확률로 허용하는 크롬 확장. 오래 참을수록 확률이 오르고,
@@ -776,7 +793,7 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 4. **도메인 설정 일원화 / 차단 사이트 추가**
    - ~~1단계: 차단·통과 규칙을 `config.js`에서~~ (2026-11-16 완료)
    - 2단계: `content_scripts`를 `chrome.scripting`으로, `reloadYoutubeTabs()`도 목록으로
-   - 3단계: 설정 화면에서 사이트 추가/삭제 (`SETTING_RULES`에 넣기)
+   - ~~3단계: 설정 화면에서 사이트 추가/삭제~~ (2026-11-19 완료, `siteList`)
 5. **`manifest.json`의 `version`이 아직 `0.1`** — 릴리스는 `v1.0`. 맞추려면 물어보고 고칠 것
 6. **제출 전 점검**
    - Vercel 대표 주소가 시크릿 창에서 로그인 없이 열리는지

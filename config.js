@@ -6,13 +6,24 @@ const CONFIG = {
   // ── 차단할 사이트 ──────────────────────────────────────────────
   // www. 없이 도메인만. 서브도메인은 자동 포함 (youtube.com → www.youtube.com, m.youtube.com도 막힘)
   //
-  // 차단 규칙(background.js의 rebuildBlockRules)과 통과 규칙(setAllowRule)이
-  // 둘 다 이 목록 하나를 읽는다. 예전에는 rules.json과 background.js에 따로 적혀 있었다.
-  // 고친 뒤에는 확장 카드의 ↻를 눌러야 규칙이 다시 만들어진다.
-  //
-  // 아직 여기 안 따라오는 곳 (다음 작업):
-  //   manifest.json의 content_scripts (남은 시간 표시), background.js의 reloadYoutubeTabs
+  // ★ 이건 '처음 목록'(공장 초기값)이다.
+  // 사용자가 설정 화면에서 사이트를 추가·삭제·끄기 하면 그 목록은 storage의 'siteList'에
+  // 저장되고, 그때부터는 이 줄을 고쳐도 반영되지 않는다 (background.js의 loadSiteList 참고).
+  // 설정 화면에서 아직 한 번도 안 건드렸을 때만 이 목록을 쓴다.
   blockedSites: ['youtube.com', 'instagram.com'],
+
+  // 사이트를 최대 몇 개까지 넣을 수 있나.
+  // 차단 규칙 번호를 사이트마다 하나씩 쓰는데(100~999), 너무 많으면 설정 화면 버튼 줄도 넘친다.
+  maxSites: 20,
+
+  // 설정 화면 [사이트 추가] 아래에 버튼으로 보여줄 '자주 쓰는 사이트'.
+  // 누르면 바로 추가된다. 이미 목록에 있는 사이트는 버튼이 안 보인다.
+  // 형식은 blockedSites와 같다 (www. 없이 소문자 도메인).
+  suggestedSites: [
+    'youtube.com', 'instagram.com', 'naver.com', 'tiktok.com',
+    'x.com', 'facebook.com', 'reddit.com', 'twitch.tv',
+    'netflix.com', 'webtoons.com', 'namu.wiki'
+  ],
 
   // ── 어떤 곡선을 쓸지 고르는 스위치 ──────────────────────────────
   // 'log'     : 초반에 확 오르고 나중엔 완만해짐
@@ -100,17 +111,6 @@ const CONFIG = {
   //   - 공유 코드를 쓰면 묶인 기기 전체에서 하루 한 번
   chanceProb: 50,      // 당첨 확률(%)
   chanceMinutes: 30,   // 당첨되면 여는 시간(분)
-
-  // ── 테스트 칸 (차단 화면 맨 아래) ─────────────────────────────
-  // 기다린 시간과 오늘 사용량을 직접 바꿔서 확률·캐릭터를 바로 확인하는 칸.
-  //   true  : 칸이 보이고, background도 요청을 받는다
-  //   false : 칸이 숨고, 콘솔에서 요청을 보내도 background가 거절한다
-  // 배포 zip(tools/make_release.py)에서는 자동으로 false가 된다. 여기서 끌 필요 없음.
-  //
-  // 공유 코드를 켜 두면 '오늘 사용량'은 못 바꾼다. 서버 사용량을 덮어쓰는 함수를 다시 만들면
-  // 코드만 아는 사람이 남의 사용량을 0으로 되돌릴 수 있어서 예전에 지웠다 (2026-10-28).
-  testTools: true,
-  testMaxMinutes: 600,   // 테스트 칸에 넣을 수 있는 최대 분
 
   // ── 차단 화면 캐릭터 (새싹이) ──────────────────────────────────
   // 지금 확률에 따라 캐릭터 상태가 바뀐다 (blocked.js의 pickToonBase).

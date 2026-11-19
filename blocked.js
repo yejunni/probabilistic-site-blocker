@@ -16,12 +16,14 @@ const chanceResultEl = document.getElementById('chanceResult');
 
 // 어느 사이트에서 막혀 왔는지. 차단 규칙이 주소 뒤에 ?site=naver.com 처럼 붙여 준다.
 //
-// 목록(config.js의 blockedSites)에 있는 값만 믿는다. 주소창에
-// blocked.html?site=아무사이트 를 직접 쳐서, 통과한 뒤 목록에 없는 엉뚱한
-// 곳으로 보내지는 일이 없게 하려는 것이다. 없거나 이상하면 목록의 첫 번째를 쓴다.
+// 사이트 목록은 사용자가 바꿀 수 있어서 이제 config.js에 다 있지 않다.
+// 그래서 여기서는 '도메인 모양인지'만 본다. 목록에 있는지는 background가 모든 요청마다
+// 확인(checkSite)하고, 없으면 판정·통과를 거절한다. 그래서 주소창에
+// blocked.html?site=아무사이트 를 직접 쳐도 통과해서 엉뚱한 곳으로 가는 일은 없다.
+// 없거나 모양이 이상하면 처음 목록의 첫 번째를 쓴다.
 function getCurrentSite() {
-  const fromAddress = new URLSearchParams(location.search).get('site');
-  if (CONFIG.blockedSites.includes(fromAddress)) return fromAddress;
+  const fromAddress = new URLSearchParams(location.search).get('site') || '';
+  if (/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(fromAddress)) return fromAddress;
   return CONFIG.blockedSites[0];
 }
 
@@ -268,7 +270,6 @@ function render(status) {
   renderSyncInfo(status);
   renderChance(status);
   updateToon(status);   // 확률이 구간을 넘을 때만 실제로 바뀐다
-  updateTestBox(status);
 
   if (status.remainingMin <= 0) {
     // 한도를 다 썼으면 판정 자체를 안 한다
@@ -492,73 +493,6 @@ chanceBtn.addEventListener('click', async () => {
     loadTodayStats();
   }
 });
-
-
-// ─────────────────────────────────────────────────────────────
-// 테스트 칸 (config.js의 testTools가 true일 때만 보인다)
-//
-// 값을 바꾸는 건 background가 한다 (TEST_SET). 여기서는 숫자를 보내고 다시 그리기만.
-// ─────────────────────────────────────────────────────────────
-
-const testBox = document.getElementById('testBox');
-const testMsg = document.getElementById('testMsg');
-
-async function sendTestSet(changes) {
-  let result;
-  try {
-    result = await ask({ type: 'TEST_SET', ...changes });
-  } catch (e) {
-    result = null;
-  }
-
-  if (!result || !result.ok) {
-    testMsg.textContent = (result && result.error) || '확장을 새로고침(↻)해 주세요';
-    return;
-  }
-
-  testMsg.textContent = '적용했습니다';
-  // 받은 최신 상태로 바로 다시 그린다. 확률과 캐릭터가 즉시 바뀐다
-  lastStatus = result.status;
-  lastStatusAt = Date.now();
-  render(result.status);
-}
-
-// 공유 중에는 '오늘 사용' 칸을 잠근다 (background도 거절하지만 미리 막아 둔다).
-// render()가 1초마다 부르므로 글자(testMsg)는 건드리지 않는다. 안 그러면 '적용했습니다'가 바로 지워진다.
-function updateTestBox(status) {
-  if (!CONFIG.testTools) return;
-
-  const sharing = !!status.sharing;
-  const usedInput = document.getElementById('testUsed');
-  usedInput.disabled = sharing;
-  document.getElementById('testUsedBtn').disabled = sharing;
-  usedInput.title = sharing ? '공유 코드를 쓰는 중에는 바꿀 수 없습니다' : '';
-}
-
-if (CONFIG.testTools) {
-  testBox.hidden = false;
-
-  document.getElementById('testElapsedBtn').addEventListener('click', () => {
-    sendTestSet({ elapsedMin: document.getElementById('testElapsed').value });
-  });
-
-  document.getElementById('testUsedBtn').addEventListener('click', () => {
-    sendTestSet({ usedTodayMin: document.getElementById('testUsed').value });
-  });
-
-  document.querySelector('[data-test-elapsed]').addEventListener('click', () => {
-    sendTestSet({ elapsedMin: 0 });
-  });
-
-  // +10분 / +30분: 지금 기다린 시간에 더한다
-  for (const button of document.querySelectorAll('[data-test-add]')) {
-    button.addEventListener('click', () => {
-      const now = lastStatus ? withElapsedSinceFetch(lastStatus).elapsedMin : 0;
-      const added = Math.min(now + Number(button.dataset.testAdd), CONFIG.testMaxMinutes);
-      sendTestSet({ elapsedMin: Math.round(added) });
-    });
-  }
-}
 
 
 // [설정]: 이 사이트의 설정이 바로 열리게 주소에 ?site=를 붙여 연다.

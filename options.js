@@ -10,11 +10,17 @@
 //
 // 처음 값은 주소의 ?site= (차단 화면의 [설정] 버튼이 붙여 준다).
 // 없거나 목록에 없으면 목록의 첫 번째. 사이트 버튼을 누르면 바뀐다.
-let currentSite = pickStartSite();
+// 목록은 background에 물어봐야 알 수 있어서, init()에서 목록을 받은 뒤에 정한다.
+let currentSite = null;
+
+// 사이트 목록. [{ site: 'youtube.com', on: true }, ...]  (background의 loadSiteList와 같은 모양)
+// 사용자가 추가·삭제할 수 있어서 config.js가 아니라 background(GET_SITES)에서 받는다.
+let siteList = [];
 
 function pickStartSite() {
   const fromAddress = new URLSearchParams(location.search).get('site');
-  return CONFIG.blockedSites.includes(fromAddress) ? fromAddress : CONFIG.blockedSites[0];
+  const found = siteList.find(item => item.site === fromAddress);
+  return found ? found.site : siteList[0].site;
 }
 
 
@@ -637,19 +643,30 @@ async function save() {
 // 사이트 고르기
 // ─────────────────────────────────────────────────────────────
 
-// 사이트 버튼 줄을 만든다. 목록은 config.js의 blockedSites.
+// 사이트 버튼 줄을 만든다. 목록은 siteList (background에서 받은 것).
 // 지금 고르는 사이트 버튼은 aria-pressed="true" (CSS가 이걸 보고 색을 칠한다).
+// 차단을 꺼 둔 사이트는 data-off를 붙여 흐리게 보인다.
 function renderSiteTabs() {
   const box = document.getElementById('siteTabs');
   box.innerHTML = '';
 
-  for (const site of CONFIG.blockedSites) {
+  for (const { site, on } of siteList) {
     const button = document.createElement('button');
-    button.textContent = site;
+    button.textContent = on ? site : `${site} (꺼짐)`;
     button.setAttribute('aria-pressed', site === currentSite ? 'true' : 'false');
+    if (!on) button.dataset.off = '';
     button.addEventListener('click', () => switchSite(site));
     box.appendChild(button);
   }
+
+  // 스위치는 지금 고른 사이트의 켜짐/꺼짐을 따라간다
+  const current = siteList.find(item => item.site === currentSite);
+  document.getElementById('siteOnToggle').checked = Boolean(current && current.on);
+
+  // 하나 남으면 못 뺀다 (background도 거절하지만, 눌러 보기 전에 알 수 있게)
+  document.getElementById('removeSiteBtn').disabled = siteList.length <= 1;
+
+  renderSuggestedSites();
 
   // 어느 사이트를 고치는 중인지 글자로도, 탭 제목으로도 보여준다
   document.getElementById('editingSite').textContent = currentSite;
@@ -670,6 +687,18 @@ async function switchSite(site) {
     return;
   }
 
+  await loadSite(site);
+
+  const msg = document.getElementById('saveMsg');
+  msg.className = '';
+  msg.textContent = `${site} 설정을 불러왔습니다`;
+  setTimeout(() => { msg.textContent = ''; }, 2000);
+}
+
+
+// 이 사이트를 고른 상태로 바꾸고 그 사이트 설정을 화면에 채운다.
+// (저장 안 한 변경 확인은 하지 않는다. 부르는 쪽이 필요하면 먼저 묻는다)
+async function loadSite(site) {
   currentSite = site;
 
   // 주소의 ?site=도 바꿔 둔다. 새로고침(F5)해도 같은 사이트가 열리게.
@@ -679,11 +708,106 @@ async function switchSite(site) {
   fillForm(res.settings);
   savedSnapshot = JSON.stringify(collectForm());
   renderSiteTabs();
+}
 
-  const msg = document.getElementById('saveMsg');
-  msg.className = '';
-  msg.textContent = `${site} 설정을 불러왔습니다`;
-  setTimeout(() => { msg.textContent = ''; }, 2000);
+
+// ─────────────────────────────────────────────────────────────
+// 사이트 켜기/끄기 · 빼기 · 추가
+//
+// 셋 다 [저장]을 기다리지 않고 바로 background에 보낸다.
+// 목록을 고치고 검사하는 건 background가 한다. 여기서는 결과 목록을 받아 다시 그리기만.
+// ─────────────────────────────────────────────────────────────
+
+// 00번 칸 아래 안내 글. fail이면 빨갛게
+function showSiteMessage(text, failed = false) {
+  const msg = document.getElementById('siteMsg');
+  msg.textContent = text;
+  msg.className = failed ? 'hint fail' : 'hint';
+}
+
+
+// 스위치를 눌렀을 때.
+// 끌 때만 한 번 묻는다 (사용자 결정). 끄기는 '판정 없이 들어가는 길'이라 실수로 누르지 않게.
+// 켜는 건 더 막는 쪽이라 묻지 않는다.
+async function onSiteToggle(event) {
+  const toggle = event.target;
+  const on = toggle.checked;
+
+  if (!on && !confirm(`${currentSite} 차단을 끌까요?\n끄면 확률 판정 없이 바로 들어갈 수 있습니다.`)) {
+    toggle.checked = true;   // 취소했으니 스위치를 원래대로
+    return;
+  }
+
+  const res = await ask({ type: 'SET_SITE_ON', on });
+  if (!res || !res.ok) {
+    toggle.checked = !on;
+    showSiteMessage((res && res.error) || '바꾸지 못했습니다', true);
+    return;
+  }
+
+  siteList = res.sites;
+  renderSiteTabs();
+  showSiteMessage(on ? `${currentSite} 차단을 켰습니다` : `${currentSite} 차단을 껐습니다`);
+}
+
+
+// [목록에서 빼기]. 뺀 뒤에는 목록 첫 번째 사이트로 넘어간다.
+async function onRemoveSite() {
+  const site = currentSite;
+  if (!confirm(`${site}을(를) 목록에서 뺄까요?\n빼면 이 사이트는 더 이상 막히지 않습니다.\n(다시 추가하면 오늘 사용량과 설정은 그대로 돌아옵니다)`)) {
+    return;
+  }
+
+  const res = await ask({ type: 'REMOVE_SITE' });
+  if (!res || !res.ok) {
+    showSiteMessage((res && res.error) || '빼지 못했습니다', true);
+    return;
+  }
+
+  siteList = res.sites;
+  await loadSite(siteList[0].site);
+  showSiteMessage(`${site}을(를) 목록에서 뺐습니다`);
+}
+
+
+// [사이트 추가]. 친 글자를 그대로 보내고, 다듬은 이름은 background가 돌려준다.
+async function onAddSite() {
+  const input = document.getElementById('newSiteInput');
+  if (!input.value.trim()) return;
+
+  if (await requestAddSite(input.value)) input.value = '';
+}
+
+
+// 자주 쓰는 사이트 버튼(+ naver.com …)을 만든다. 이미 목록에 있는 건 뺀다.
+// 목록이 바뀔 때마다(renderSiteTabs) 다시 그린다.
+function renderSuggestedSites() {
+  const box = document.getElementById('suggestedSites');
+  box.innerHTML = '';
+
+  for (const site of CONFIG.suggestedSites || []) {
+    if (siteList.some(item => item.site === site)) continue;
+
+    const button = document.createElement('button');
+    button.textContent = '+ ' + site;
+    button.addEventListener('click', () => requestAddSite(site));
+    box.appendChild(button);
+  }
+}
+
+
+// 입력칸과 자주 쓰는 사이트 버튼이 같이 쓰는 부분. 성공하면 true
+async function requestAddSite(text) {
+  const res = await ask({ type: 'ADD_SITE', input: text });
+  if (!res || !res.ok) {
+    showSiteMessage((res && res.error) || '추가하지 못했습니다', true);
+    return false;
+  }
+
+  siteList = res.sites;
+  renderSiteTabs();
+  showSiteMessage(`${res.site}을(를) 추가했습니다. 위 버튼을 눌러 이 사이트의 확률·한도를 정할 수 있습니다`);
+  return true;
 }
 
 
@@ -727,6 +851,14 @@ function hookEvents() {
 
   document.getElementById('statsRefreshBtn').addEventListener('click', loadStats);
 
+  document.getElementById('siteOnToggle').addEventListener('change', onSiteToggle);
+  document.getElementById('removeSiteBtn').addEventListener('click', onRemoveSite);
+  document.getElementById('addSiteBtn').addEventListener('click', onAddSite);
+  // 입력칸에서 Enter를 눌러도 추가된다
+  document.getElementById('newSiteInput').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') onAddSite();
+  });
+
   hookPreviewDrag();
 }
 
@@ -735,6 +867,15 @@ async function init() {
   let res;
 
   try {
+    // 사이트 목록부터 받아야 '어느 사이트 설정을 열지'를 정할 수 있다
+    const sitesRes = await ask({ type: 'GET_SITES' });
+    if (!sitesRes || !Array.isArray(sitesRes.sites) || sitesRes.sites.length === 0) {
+      showStartupError('사이트 목록을 불러오지 못했습니다. chrome://extensions 에서 확장을 새로고침한 뒤 다시 열어보세요.');
+      return;
+    }
+    siteList = sitesRes.sites;
+    currentSite = pickStartSite();
+
     res = await ask({ type: 'GET_SETTINGS' });
   } catch (e) {
     showStartupError('background.js에 연결하지 못했습니다: ' + e.message);

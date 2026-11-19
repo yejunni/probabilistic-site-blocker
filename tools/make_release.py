@@ -91,19 +91,6 @@ def check_key():
         stop(f'anon 키가 아닙니다 (role={role}). 절대 배포하면 안 됩니다.')
 
 
-# zip에 넣을 config.js 내용. 테스트 칸(testTools)만 끈다.
-#
-# 저장소의 config.js는 건드리지 않는다 (개발할 때는 계속 켜 두려고).
-# 'testTools: true' 줄을 못 찾으면 멈춘다. 이름이 바뀌어 조용히 켜진 채 배포되는 걸 막으려고.
-def release_config_text():
-    text = (ROOT / 'config.js').read_text(encoding='utf-8')
-    changed, count = re.subn(r'testTools:\s*true', 'testTools: false', text)
-
-    if count == 0 and not re.search(r'testTools:\s*false', text):
-        stop('config.js에서 testTools 줄을 찾지 못했습니다.')
-    return changed
-
-
 def main():
     check_key()
 
@@ -126,13 +113,10 @@ def main():
 
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
         for name in all_files:
-            if name == 'config.js':
-                zf.writestr(f'{FOLDER_IN_ZIP}/{name}', release_config_text())
-            else:
-                zf.write(ROOT / name, f'{FOLDER_IN_ZIP}/{name}')
+            zf.write(ROOT / name, f'{FOLDER_IN_ZIP}/{name}')
 
     print('만들었습니다:', zip_path)
-    print('파일', len(all_files), '개 (그림 포함), anon 키 확인됨, 테스트 칸 꺼짐')
+    print('파일', len(all_files), '개 (그림 포함), anon 키 확인됨')
 
 
 main()
