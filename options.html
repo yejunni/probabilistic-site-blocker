@@ -14,17 +14,28 @@
   <main class="options-shell">
     <header class="options-header">
       <div>
-        <a class="back-link" href="blocked.html">← 차단 화면</a>
+        <!-- href는 options.js가 지금 고르는 사이트의 차단 화면으로 바꾼다 -->
+        <a class="back-link" id="backLink" href="blocked.html">← 차단 화면</a>
         <div class="title-lockup">
           <span class="yj-mark" aria-label="YJ">YJ</span>
           <h1>사이트 차단 설정</h1>
         </div>
       </div>
       <div class="options-meta">
-        <span class="youtube-lockup"><span class="youtube-icon"></span><span>YouTube Control</span></span>
-        <p>하루 이용 한도와 시간에 따른 통과 확률을 설정합니다.</p>
+        <span class="youtube-lockup"><span class="youtube-icon"></span><span>Site Control</span></span>
+        <p>사이트마다 하루 이용 한도와 시간에 따른 통과 확률을 따로 설정합니다.</p>
       </div>
     </header>
+
+    <!--
+      사이트 고르기. 버튼은 options.js가 config.js의 blockedSites로 만든다.
+      아래 01~05는 전부 '여기서 고른 사이트'의 설정이다. 06 공유 코드만 모든 사이트 공통.
+    -->
+    <section class="settings-section site-picker">
+      <div class="section-heading"><span class="section-number">00</span><h2>설정할 사이트</h2></div>
+      <div class="site-tabs" id="siteTabs"></div>
+      <p class="hint">지금 고치는 사이트: <strong id="editingSite">-</strong> · 아래 01~05가 이 사이트에만 적용됩니다. 사이트마다 따로 저장하세요.</p>
+    </section>
 
     <section class="settings-section">
       <div class="section-heading"><span class="section-number">01</span><h2>빠른 설정</h2></div>
@@ -157,7 +168,7 @@
     </section>
 
     <section class="settings-section">
-      <div class="section-heading"><span class="section-number">05</span><h2>공통 설정</h2></div>
+      <div class="section-heading"><span class="section-number">05</span><h2>그 밖의 설정</h2></div>
       <div class="row">
         <label>확률 상한</label>
         <input type="range" data-setting="maxProb">
@@ -175,7 +186,7 @@
     </section>
 
     <section class="settings-section">
-      <div class="section-heading"><span class="section-number">06</span><h2>공유 코드</h2></div>
+      <div class="section-heading"><span class="section-number">06</span><h2>공유 코드 (모든 사이트 공통)</h2></div>
       <div class="row">
         <label>코드</label>
         <input type="text" id="shareCode" placeholder="비워두면 이 기기만">
@@ -187,7 +198,7 @@
     </section>
 
     <section class="settings-section">
-      <div class="section-heading"><span class="section-number">07</span><h2>기록 통계</h2></div>
+      <div class="section-heading"><span class="section-number">07</span><h2>기록 통계 (모든 사이트 합계)</h2></div>
       <p class="hint" id="statsWho"></p>
       <div id="statsCards"></div>
 

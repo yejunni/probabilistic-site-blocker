@@ -64,8 +64,11 @@ let lastStatusAt = 0;     // 그걸 받아온 시각(ms)
 
 // background.js에게 말을 거는 함수.
 // 답장이 올 때까지 기다렸다가 결과를 돌려준다.
+// 모든 요청에 '이 화면이 어느 사이트 것인지'(currentSite)를 붙여 보낸다.
+// 상태·설정·통과가 사이트마다 따로라서, background가 어느 사이트 칸을 볼지 알아야 한다.
+// 요청마다 따로 붙이면 하나쯤 빼먹기 쉬워서 여기 한 곳에서 붙인다.
 function ask(message) {
-  return chrome.runtime.sendMessage(message);
+  return chrome.runtime.sendMessage({ ...message, site: currentSite });
 }
 
 
@@ -347,20 +350,13 @@ document.getElementById('testRollsBtn').addEventListener('click', async () => {
   table.hidden = false;
 });
 
+// [설정]: 이 사이트의 설정이 바로 열리게 주소에 ?site=를 붙여 연다.
+//
+// 예전에는 chrome.runtime.openOptionsPage()를 썼는데, 그 함수는 주소 뒤에
+// ?site=를 붙일 수 없다. 그래서 주소를 직접 만들어 연다.
+// (getURL은 확장 ID가 바뀌어도 알아서 맞춰준다)
 document.getElementById('settingsBtn').addEventListener('click', () => {
-  // 주소를 직접 만들어 여는 방법. 확장 ID가 바뀌어도 알아서 맞춰준다.
-  const openDirectly = () => window.open(chrome.runtime.getURL('options.html'));
-
-  // 원래는 이 한 줄이면 된다.
-  // 다만 manifest의 options_page가 아직 반영되지 않았으면 조용히 실패한다.
-  // 그때는 주소로 직접 열어서라도 설정에 들어갈 수 있게 한다.
-  try {
-    chrome.runtime.openOptionsPage(() => {
-      if (chrome.runtime.lastError) openDirectly();
-    });
-  } catch (e) {
-    openDirectly();
-  }
+  window.open(chrome.runtime.getURL('options.html?site=' + encodeURIComponent(currentSite)));
 });
 
 

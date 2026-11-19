@@ -593,6 +593,24 @@ input[type="radio"] {
   background: var(--accent);
 }
 
+/* 설정할 사이트 버튼 줄. 지금 고르는 사이트(aria-pressed="true")만 칠한다 (options.js renderSiteTabs) */
+.site-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.site-tabs button {
+  margin: 0;
+  font-weight: 700;
+}
+
+.site-tabs button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+}
+
 .row {
   display: grid;
   grid-template-columns: minmax(130px, 0.8fr) minmax(180px, 2fr) 88px;
@@ -1119,7 +1137,8 @@ code {
   #attemptBtn,
   #startBtn,
   #saveBtn,
-  .preset-group button[data-preset="normal"] {
+  .preset-group button[data-preset="normal"],
+  .site-tabs button[aria-pressed="true"] {
     color: #10253f;
   }
 

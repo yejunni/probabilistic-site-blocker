@@ -6,15 +6,33 @@
 // 이 파일은 손댈 게 없도록 하려는 것이다.
 
 
-// background.js에 말을 거는 함수
+// 지금 고치고 있는 사이트. 설정은 사이트마다 따로다.
+//
+// 처음 값은 주소의 ?site= (차단 화면의 [설정] 버튼이 붙여 준다).
+// 없거나 목록에 없으면 목록의 첫 번째. 사이트 버튼을 누르면 바뀐다.
+let currentSite = pickStartSite();
+
+function pickStartSite() {
+  const fromAddress = new URLSearchParams(location.search).get('site');
+  return CONFIG.blockedSites.includes(fromAddress) ? fromAddress : CONFIG.blockedSites[0];
+}
+
+
+// background.js에 말을 거는 함수.
+// 모든 요청에 지금 사이트를 붙인다. 안 붙이면 background가 첫 번째 사이트 설정을 고친다
+// (사이트를 골라도 유튜브만 바뀌던 이유가 이것이었다).
 function ask(message) {
-  return chrome.runtime.sendMessage(message);
+  return chrome.runtime.sendMessage({ ...message, site: currentSite });
 }
 
 
 // background에서 받아온 것들. init()에서 채워진다.
 let RULES = null;      // 각 항목의 허용 범위 (슬라이더 min/max를 여기서 가져온다)
 let DEFAULTS = null;   // 공장 초기값 ([기본값으로] 버튼이 쓴다)
+
+// 마지막으로 불러오거나 저장한 화면 값(글자로 바꾼 것).
+// 지금 화면과 다르면 '저장 안 한 변경'이 있는 것이다. 사이트를 바꿀 때 확인한다.
+let savedSnapshot = '';
 
 
 // 하루 한도 권장 범위. 벗어나도 막지는 않고 색만 바꿔서 알려준다.
@@ -586,12 +604,13 @@ async function save() {
     // 공유 코드를 새로 넣었는데 그 코드에 이미 설정이 있었으면,
     // 방금 화면에서 만지던 값이 아니라 그 설정을 그대로 받아온 것이다.
     msg.textContent = result.adopted
-      ? '이 공유 코드에 저장돼 있던 설정을 불러왔습니다'
-      : '저장했습니다';
+      ? `이 공유 코드에 저장돼 있던 ${currentSite} 설정을 불러왔습니다`
+      : `${currentSite} 설정을 저장했습니다`;
 
     // background가 정리한 값(정렬·중복 제거, 또는 방금 받아온 공유 설정)을
     // 화면에 되비춘다. 내가 적은 것과 실제 저장된 것이 다를 수 있기 때문이다.
     fillForm(result.settings);
+    savedSnapshot = JSON.stringify(collectForm());
 
     // 공유 코드를 바꿨다면 이름표가 달라져 통계도 달라진다. 같이 새로 불러온다.
     loadStats();
@@ -611,6 +630,60 @@ async function save() {
     }
     msg.appendChild(list);
   }
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// 사이트 고르기
+// ─────────────────────────────────────────────────────────────
+
+// 사이트 버튼 줄을 만든다. 목록은 config.js의 blockedSites.
+// 지금 고르는 사이트 버튼은 aria-pressed="true" (CSS가 이걸 보고 색을 칠한다).
+function renderSiteTabs() {
+  const box = document.getElementById('siteTabs');
+  box.innerHTML = '';
+
+  for (const site of CONFIG.blockedSites) {
+    const button = document.createElement('button');
+    button.textContent = site;
+    button.setAttribute('aria-pressed', site === currentSite ? 'true' : 'false');
+    button.addEventListener('click', () => switchSite(site));
+    box.appendChild(button);
+  }
+
+  // 어느 사이트를 고치는 중인지 글자로도, 탭 제목으로도 보여준다
+  document.getElementById('editingSite').textContent = currentSite;
+  document.title = `설정 — ${currentSite}`;
+
+  // ← 차단 화면 링크도 이 사이트의 차단 화면으로
+  document.getElementById('backLink').href = 'blocked.html?site=' + encodeURIComponent(currentSite);
+}
+
+
+// 다른 사이트 버튼을 눌렀을 때. 그 사이트의 저장된 설정을 불러와 화면을 바꾼다.
+async function switchSite(site) {
+  if (site === currentSite) return;
+
+  // 저장 안 한 변경이 있으면 물어본다. 모르고 넘어가면 만지던 값이 사라진다.
+  if (JSON.stringify(collectForm()) !== savedSnapshot &&
+      !confirm(`${currentSite} 설정에 저장하지 않은 변경이 있습니다. 버리고 ${site}(으)로 넘어갈까요?`)) {
+    return;
+  }
+
+  currentSite = site;
+
+  // 주소의 ?site=도 바꿔 둔다. 새로고침(F5)해도 같은 사이트가 열리게.
+  history.replaceState(null, '', '?site=' + encodeURIComponent(site));
+
+  const res = await ask({ type: 'GET_SETTINGS' });
+  fillForm(res.settings);
+  savedSnapshot = JSON.stringify(collectForm());
+  renderSiteTabs();
+
+  const msg = document.getElementById('saveMsg');
+  msg.className = '';
+  msg.textContent = `${site} 설정을 불러왔습니다`;
+  setTimeout(() => { msg.textContent = ''; }, 2000);
 }
 
 
@@ -684,6 +757,8 @@ async function init() {
 
   applyRanges();           // 슬라이더 범위를 먼저 맞춰야
   fillForm(res.settings);  // 값을 넣었을 때 잘리지 않는다
+  savedSnapshot = JSON.stringify(collectForm());
+  renderSiteTabs();
   hookEvents();
 
   // 통계는 네트워크를 타므로 화면을 다 그린 뒤에 따로 불러온다.

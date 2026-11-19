@@ -408,18 +408,47 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 | | id | priority | action | condition |
 |---|---|---|---|---|
 | 차단 (`rebuildBlockRules`) | 100 + 순번 | 1 | redirect → `/blocked.html?site=<도메인>` | `requestDomains: [도메인]` |
-| 통과 (`setAllowRule`) | 1000 | **2** | allow | `requestDomains: 목록 전체` |
+| 통과 (`setAllowRule(site, on)`) | **1000 + 순번** (사이트별, 2026-11-16) | **2** | allow | `requestDomains: [그 도메인]` |
 
 - `rebuildBlockRules()`: onInstalled / onStartup / 설정 저장(`saveSettings` 두 곳, `mergeSharedSettings`).
   100~999번을 `getDynamicRules`로 찾아 전부 지우고 다시 넣는다 (한 번의 호출이라 빈틈 없음)
 - `?site=` 쿼리는 크롬이 지우지 않는다 (Chromium `indexed_rule.cc`가 `base_url.Resolve`로 붙임)
 - `blocked.js`는 `?site=`가 **목록에 있을 때만** 믿는다. 아니면 첫 번째. 엉뚱한 곳으로 돌려보내지 않게
-- **통과 한 번이면 목록 전체가 열린다** (규칙 하나에 전부). 한도도 사이트 구분 없이 하나
+- ~~통과 한 번이면 목록 전체가 열린다~~ → **사이트별로 바뀜** (아래 "사이트별 분리")
 - `blockedSites`는 아직 `SETTING_RULES`에 없다. 넣으면 storage 값이 config.js를 덮어써서
   config.js를 고쳐도 반영이 안 된다. 설정 화면을 만들 때 `getBlockedSites()`만 `loadSettings`로 바꿀 것
 
 `setAllowRule()`은 항상 `removeRuleIds: [ALLOW_RULE_ID]`를 먼저 넣는다.
 같은 id의 규칙이 이미 있으면 오류가 나기 때문이다.
+
+---
+
+## 사이트별 분리 (2026-11-16, 1단계)
+
+**사이트마다 완전히 따로** (사용자 결정): 곡선·한도·기다린 시간·이용 중·찬스·통과.
+유튜브에서 실패해도 네이버의 기다린 시간은 그대로. 유튜브 통과로 네이버는 안 열린다.
+찬스도 **사이트마다 하루 한 번**.
+
+| 무엇 | 저장 이름 | 비고 |
+|---|---|---|
+| 상태 | `'<site>|waitStartAt'` 등 칸마다 (sync) | 덩어리로 묶으면 동시 저장 때 서로 덮어씀 → 칸마다 |
+| 설정 | `'settings|<site>'` (sync) | 공유 코드만 공통 `'shareCode'` |
+| 통과권 | `'passTicket|<site>'` (session) | |
+| 알람 | `'sessionEnd:<site>'` | |
+| 서버 줄 | `shared_state.client_id = '<코드>:<site>'` | SQL 수정 없음 |
+| 기록·통계 | `getRecordId()` 그대로 (공유 코드) | **사이트 구분 없이 합쳐짐.** 표에 site 칸 없음 |
+
+- `loadState(site)` `saveState(site, …)` `loadSettings(site)` `buildStatus(site)` … 거의 모든 함수가 `site`를 받는다
+- 차단 화면 `ask()`가 모든 요청에 `site`를 붙인다. background는 `checkSite()`로 목록에 있을 때만 받는다
+- `timer.js`의 `GET_SESSION`은 site를 안 보낸다 → `sender.tab.url`로 `siteFromUrl()`
+- 설정 화면 맨 위 **[00 설정할 사이트]** 버튼 줄(`#siteTabs`, 2단계 2026-11-17). `options.js`의 `ask()`가 `currentSite`를 붙인다
+  - 처음 사이트는 주소 `?site=` (차단 화면 [설정]이 붙임) → 없으면 목록 첫 번째. 툴바 아이콘으로 열면 첫 번째
+  - 저장 안 한 변경이 있는데 사이트를 바꾸면 `confirm`으로 묻는다 (`savedSnapshot`과 비교)
+  - background는 `site`가 없으면 여전히 첫 번째 사이트를 쓴다 (옛 화면 대비)
+- **옛 값 옮기기**: `migrateToPerSite()`가 onInstalled에서 옛 `waitStartAt`·`settings` 등을 `youtube.com` 몫으로 옮기고 지운다
+  - 공유 중이면 서버 줄 이름이 `코드` → `코드:youtube.com`으로 바뀌어 **유튜브 오늘 사용량이 서버 기준 0으로** 한 번 돌아간다
+- onInstalled는 **한 리스너에서 순서대로**: 옮기기 → 옛 키 정리 → 차단 규칙 → `reconcile()`
+- `reconcile()`은 통과 규칙(1000~1999)을 먼저 다 지우고 이용 중인 사이트만 다시 세운다
 
 ---
 
@@ -458,7 +487,7 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 - **차단 도메인이 아직 다 안 모였다.** 차단·통과 규칙은 `config.js`의 `blockedSites`로 모았지만(2026-11-16),
   아래 두 곳은 여전히 유튜브 고정이다:
   - `manifest.json`의 `content_scripts.matches` → 다른 사이트엔 남은 시간이 안 뜬다
-  - `background.js`의 `reloadYoutubeTabs()` → 이용이 끝나도 다른 사이트 탭은 새로고침이 안 돼 계속 열려 있다
+  - ~~`reloadYoutubeTabs()`~~ → `reloadSiteTabs(site)`로 해결 (2026-11-16)
   - (꾸미기) 차단 화면의 유튜브 아이콘
 - **프로필·계정 전환으로 우회할 수 있다.** 확장은 자기가 설치된 프로필 안에서만
   동작하므로 코드로는 막을 수 없는 **구조적 한계**다.
@@ -663,8 +692,14 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 - **확인됨**: 실제 브라우저에서 `naver.com`을 넣고 ↻ → 네이버가 차단 화면으로 넘어감
   - 처음엔 안 막혔는데, config.js를 **저장하지 않은 채** ↻를 눌러서였다 (확장은 디스크의 파일을 읽는다)
 - 목록을 `youtube.com`, `naver.com`, `instagram.com`으로 늘림 (사용자 요청)
-- **TODO**: content_scripts, `reloadYoutubeTabs()` (위 "알려진 문제") — 네이버·인스타는 남은 시간 표시가 없고,
-  이용이 끝나도 열린 탭이 새로고침되지 않는다
+- **TODO**: content_scripts (위 "알려진 문제") — 네이버·인스타는 남은 시간 표시가 없다
+
+### 2026-11-16 [Claude Code] — 사이트별 분리 1단계
+- 사용자: "사이트 하나에서 실패하면 다른 확률 전체가 실패하는데 이건 좀 에바" → **완전히 따로**, 찬스도 사이트마다
+- background.js 전부 사이트별로 (위 "사이트별 분리" 절). blocked.js는 `ask()`에 site 붙이기만
+- `reloadYoutubeTabs()` → `reloadSiteTabs(site)`. 끝난 사이트의 탭만 새로고침 (숙제 하나 해결)
+- **아직 실제 브라우저 확인 안 함** (자동 문법 검사도 못 돌림)
+- 다음: 2단계 설정 화면 사이트 선택 / 3단계 timer.js 모든 사이트 (manifest, 물어볼 것) / 4단계 기록에 site 칸 (SQL)
 
 ---
 
