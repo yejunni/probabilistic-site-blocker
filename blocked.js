@@ -73,6 +73,142 @@ function ask(message) {
 
 
 // ─────────────────────────────────────────────────────────────
+// 캐릭터 (새싹이)
+//
+// 여기서는 '어떤 상태 class를 붙일지'와 '어떤 그림을 쓸지'만 정한다.
+// 움직임은 전부 extension.css에 있다. 확률은 계산하지 않고 GET_STATUS의 prob만 본다.
+//
+// 상태는 두 종류다.
+//   평소(base)   : 확률로 정해지고 계속 반복된다. a-wait / a-calm / a-perk
+//   반응(reaction): 일이 생겼을 때 한 번만 돈다. a-pass / a-fail / a-shrug / a-no
+//                  끝나면(animationend) 평소 상태로 돌아간다.
+// ─────────────────────────────────────────────────────────────
+
+const toonEl = document.getElementById('toon');
+const toonBodyEl = document.getElementById('toonBody');
+const toonSproutEl = document.getElementById('toonSprout');
+
+// 상태 class → 그림 번호 (images/navy-07-body.png 의 07)
+const TOON_PICTURE = {
+  'a-wait': '07', 'a-calm': '02', 'a-perk': '04',
+  'a-pass': '06', 'a-fail': '01', 'a-shrug': '08', 'a-no': '03'
+};
+
+let toonBase = null;        // 확률로 정해지는 평소 상태
+let toonReaction = null;    // 지금 한 번 도는 중인 반응. 없으면 null
+let toonShown = null;       // 지금 #toon에 실제로 붙어 있는 class
+let toonEndedParts = new Set();   // 반응 중 움직임이 끝난 부분 (몸 / 새싹)
+let toonStillTimer = null;  // 움직임 줄이기 모드에서 반응을 끝낼 타이머
+let wasOutOfLimit = false;  // 직전에 남은 한도가 0이었는지 (0이 '되는 순간'만 고개를 젓게)
+
+
+// 지금 그림 묶음(navy / cream). CSS 변수 --toon-tone에서 읽는다.
+// 다크 모드면 extension.css가 cream으로 바꿔 둔다. 색을 JS에 적지 않는 것과 같은 방식.
+function getToonTone() {
+  const tone = getComputedStyle(document.documentElement).getPropertyValue('--toon-tone').trim();
+  return tone || 'navy';
+}
+
+
+// 지금 상태와 다크 모드에 맞는 그림을 넣는다. 이미 같은 그림이면 건드리지 않는다.
+function setToonPictures() {
+  if (!toonShown) return;
+
+  const prefix = `images/${getToonTone()}-${TOON_PICTURE[toonShown]}`;
+  const bodySrc = prefix + '-body.png';
+  const sproutSrc = prefix + '-sprout.png';
+
+  if (toonBodyEl.getAttribute('src') !== bodySrc) toonBodyEl.src = bodySrc;
+  if (toonSproutEl.getAttribute('src') !== sproutSrc) toonSproutEl.src = sproutSrc;
+}
+
+
+// #toon의 상태 class를 바꾼다.
+//
+// ★ 같은 class면 아무것도 하지 않는다. render()가 1초마다 불리는데, 그때마다
+//   class를 다시 쓰면 반복 애니메이션이 매번 처음으로 되돌아가 덜컥거린다.
+//
+// restart: 같은 반응을 연달아 보여줄 때(실패 두 번 등) 처음부터 다시 돌게 한다.
+function showToon(name, restart = false) {
+  if (name === toonShown && !restart) return;
+
+  if (toonShown) toonEl.classList.remove(toonShown);
+  // class를 뗀 걸 브라우저가 알아차리게 레이아웃을 한 번 읽는다.
+  // 이게 없으면 같은 class를 바로 다시 붙였을 때 애니메이션이 다시 안 돈다.
+  if (restart) void toonEl.offsetWidth;
+  toonEl.classList.add(name);
+  toonShown = name;
+
+  setToonPictures();
+}
+
+
+// 확률로 평소 상태를 고른다. 경계 숫자는 config.js.
+function pickToonBase(prob) {
+  if (prob < CONFIG.toonCalmFromProb) return 'a-wait';
+  if (prob < CONFIG.toonPerkFromProb) return 'a-calm';
+  return 'a-perk';
+}
+
+
+// render()가 부른다. 평소 상태를 갱신하고, 한도가 막 0이 됐으면 고개를 젓는다.
+function updateToon(status) {
+  toonBase = pickToonBase(status.prob);
+
+  const outOfLimit = status.remainingMin <= 0;
+  if (outOfLimit && !wasOutOfLimit) playToonReaction('a-no');
+  wasOutOfLimit = outOfLimit;
+
+  // 반응이 도는 중이면 평소 상태로 덮지 않는다. 반응이 끝나면 그때 돌아간다.
+  if (!toonReaction) showToon(toonBase);
+}
+
+
+// 한 번만 도는 반응을 시작한다.
+function playToonReaction(name) {
+  toonReaction = name;
+  toonEndedParts.clear();
+  clearTimeout(toonStillTimer);
+  showToon(name, true);
+
+  // 움직임 줄이기를 켠 사람은 애니메이션이 없어서 animationend가 오지 않는다.
+  // 그대로 두면 반응 그림에서 영영 안 돌아오므로, 잠깐 보여주고 직접 끝낸다.
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    toonStillTimer = setTimeout(finishToonReaction, CONFIG.toonStillReactionMs);
+  }
+}
+
+
+function finishToonReaction() {
+  clearTimeout(toonStillTimer);
+  toonReaction = null;
+  if (toonBase) showToon(toonBase);
+}
+
+
+// 반응이 끝났는지 본다.
+//
+// 몸(.toon-move)과 새싹(.toon-sprout)이 따로 animationend를 보내고, 길이가 다를 수 있다
+// (실패: 몸 1.2초, 새싹 1.4초). 먼저 끝난 쪽에서 돌아가면 새싹이 중간에 뚝 끊기므로
+// 둘 다 끝났을 때 돌아간다. (반복 애니메이션은 끝나지 않아 여기 오지 않는다)
+toonEl.addEventListener('animationend', (event) => {
+  if (!toonReaction) return;
+
+  const part = event.target.classList.contains('toon-move') ? 'move'
+             : event.target.classList.contains('toon-sprout') ? 'sprout'
+             : null;
+  if (!part) return;
+
+  toonEndedParts.add(part);
+  if (toonEndedParts.size === 2) finishToonReaction();
+});
+
+
+// 화면을 연 채로 다크 모드가 바뀌면 그림만 바꾼다 (class는 그대로라 움직임은 안 끊긴다)
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', setToonPictures);
+
+
+// ─────────────────────────────────────────────────────────────
 // 화면 그리기
 // ─────────────────────────────────────────────────────────────
 
@@ -93,6 +229,8 @@ function render(status) {
 
   renderSyncInfo(status);
   renderChance(status);
+  updateToon(status);   // 확률이 구간을 넘을 때만 실제로 바뀐다
+  updateTestBox(status);
 
   if (status.remainingMin <= 0) {
     // 한도를 다 썼으면 판정 자체를 안 한다
@@ -255,6 +393,7 @@ attemptBtn.addEventListener('click', async () => {
     resultEl.textContent =
       `통과!`;
     resultEl.className = 'pass';
+    playToonReaction('a-pass');
 
     attemptBtn.hidden = true;
     chanceBtn.disabled = true;   // 시간을 고르는 중에는 찬스도 못 쓴다
@@ -266,6 +405,10 @@ attemptBtn.addEventListener('click', async () => {
     resultEl.textContent =
       `실패`;
     resultEl.className = 'fail';
+
+    // 반응을 render()보다 먼저 건다. 반대로 하면 render가 평소 그림(확률 0% → a-wait)을
+    // 잠깐 붙였다가 실패 그림으로 바뀌어 한 번 깜빡인다.
+    playToonReaction('a-fail');
 
     // 경과 시간이 0으로 초기화된 최신 상태를 받아 다시 그린다
     render(outcome.status);
@@ -298,17 +441,86 @@ chanceBtn.addEventListener('click', async () => {
     // 당첨이면 background가 이미 차단을 풀었다. 결과를 잠깐 보여주고 원래 사이트로 보낸다
     chanceResultEl.textContent = `당첨! ${outcome.minutes}분이 열렸습니다`;
     chanceResultEl.className = 'pass';
+    playToonReaction('a-pass');   // 1.25초 뛰고 나서(1.5초 뒤) 사이트로 넘어간다
     attemptBtn.hidden = true;
     setTimeout(() => { location.href = returnUrl; }, 1500);
 
   } else {
     chanceResultEl.textContent = '꽝! 기다린 시간은 그대로입니다';
     chanceResultEl.className = 'fail';
+    playToonReaction('a-shrug');   // 실패와 같은 이유로 render()보다 먼저
     render(outcome.status);
     startTicking();
     loadTodayStats();
   }
 });
+
+
+// ─────────────────────────────────────────────────────────────
+// 테스트 칸 (config.js의 testTools가 true일 때만 보인다)
+//
+// 값을 바꾸는 건 background가 한다 (TEST_SET). 여기서는 숫자를 보내고 다시 그리기만.
+// ─────────────────────────────────────────────────────────────
+
+const testBox = document.getElementById('testBox');
+const testMsg = document.getElementById('testMsg');
+
+async function sendTestSet(changes) {
+  let result;
+  try {
+    result = await ask({ type: 'TEST_SET', ...changes });
+  } catch (e) {
+    result = null;
+  }
+
+  if (!result || !result.ok) {
+    testMsg.textContent = (result && result.error) || '확장을 새로고침(↻)해 주세요';
+    return;
+  }
+
+  testMsg.textContent = '적용했습니다';
+  // 받은 최신 상태로 바로 다시 그린다. 확률과 캐릭터가 즉시 바뀐다
+  lastStatus = result.status;
+  lastStatusAt = Date.now();
+  render(result.status);
+}
+
+// 공유 중에는 '오늘 사용' 칸을 잠근다 (background도 거절하지만 미리 막아 둔다).
+// render()가 1초마다 부르므로 글자(testMsg)는 건드리지 않는다. 안 그러면 '적용했습니다'가 바로 지워진다.
+function updateTestBox(status) {
+  if (!CONFIG.testTools) return;
+
+  const sharing = !!status.sharing;
+  const usedInput = document.getElementById('testUsed');
+  usedInput.disabled = sharing;
+  document.getElementById('testUsedBtn').disabled = sharing;
+  usedInput.title = sharing ? '공유 코드를 쓰는 중에는 바꿀 수 없습니다' : '';
+}
+
+if (CONFIG.testTools) {
+  testBox.hidden = false;
+
+  document.getElementById('testElapsedBtn').addEventListener('click', () => {
+    sendTestSet({ elapsedMin: document.getElementById('testElapsed').value });
+  });
+
+  document.getElementById('testUsedBtn').addEventListener('click', () => {
+    sendTestSet({ usedTodayMin: document.getElementById('testUsed').value });
+  });
+
+  document.querySelector('[data-test-elapsed]').addEventListener('click', () => {
+    sendTestSet({ elapsedMin: 0 });
+  });
+
+  // +10분 / +30분: 지금 기다린 시간에 더한다
+  for (const button of document.querySelectorAll('[data-test-add]')) {
+    button.addEventListener('click', () => {
+      const now = lastStatus ? withElapsedSinceFetch(lastStatus).elapsedMin : 0;
+      const added = Math.min(now + Number(button.dataset.testAdd), CONFIG.testMaxMinutes);
+      sendTestSet({ elapsedMin: Math.round(added) });
+    });
+  }
+}
 
 
 // [설정]: 이 사이트의 설정이 바로 열리게 주소에 ?site=를 붙여 연다.

@@ -1099,6 +1099,247 @@ code {
   }
 }
 
+/* 차단 화면 테스트 칸 (config.js의 testTools). 보이고 숨기는 건 JS의 hidden이 한다 */
+.test-box {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line-strong);
+}
+
+.test-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.test-row input {
+  width: 80px;
+}
+
+.test-row button {
+  margin: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   차단 화면 캐릭터 (새싹이)
+   시안: '새싹이 움직임 시안.zip'의 index.html
+
+   규칙 (어기면 새싹이 머리에서 떨어져 나간다)
+   - 몸 전체 움직임(이동·크기·회전)은 .toon-move 한 곳에만 건다.
+     몸통과 새싹이 같은 변형을 함께 받으므로 서로 떨어질 수 없다.
+   - .toon-sprout에는 '추가 회전'만 건다.
+   - transform-origin은 그 요소의 모든 변형에 적용된다. 몸통과 새싹에
+     같은 움직임을 따로 걸면, 찌그러질 때 기준점이 달라 둘이 어긋난다.
+   ───────────────────────────────────────────────────────────── */
+
+:root {
+  /* 그림 묶음 이름. blocked.js가 읽어서 images/<이 값>-07-body.png 를 고른다.
+     다크 모드에서는 아래 다크 모드 칸에서 cream으로 바뀐다 */
+  --toon-tone: navy;
+  --toon-shadow-color: #142f58;
+  --toon-shadow-opacity: 0.17;
+}
+
+/* 무대. 캐릭터는 바닥에 서 있다. 뛰어오를 때는 위로 넘쳐도 되게 overflow를 열어 둔다 */
+.toon-stage {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  height: 176px;
+  margin: 6px 0 2px;
+}
+
+/* 바닥 그림자. 이게 있어야 뛴 건지 커진 건지 구분이 된다 */
+.toon-shadow {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  width: 92px;
+  aspect-ratio: 5 / 1;
+  border-radius: 50%;
+  background: var(--toon-shadow-color);
+  opacity: var(--toon-shadow-opacity);
+  transform: translateX(-50%);
+}
+
+/* 그림 크기 500×650 비율 그대로 */
+.toon {
+  position: relative;
+  width: 120px;
+  aspect-ratio: 500 / 650;
+  /* 새싹이 도는 기준점(세로 위치). 그림마다 새싹 위치가 달라 상태별로 아래에서 바꾼다 */
+  --sprout-pivot: 27%;
+}
+
+.toon-move {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 100%;   /* 발밑. 바닥을 딛고 움직인다 */
+}
+
+.toon-move img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.toon-sprout {
+  transform-origin: 50% var(--sprout-pivot);
+}
+
+/* 그림별 새싹 기준점 (시안의 PIVOT 값). 27%로 통일하면 07은 새싹이 엉뚱한 점을 돈다 */
+.toon.a-wait  { --sprout-pivot: 35.2%; }   /* 07 */
+.toon.a-calm  { --sprout-pivot: 26.5%; }   /* 02 */
+.toon.a-perk  { --sprout-pivot: 28.5%; }   /* 04 */
+.toon.a-pass  { --sprout-pivot: 27.5%; }   /* 06 */
+.toon.a-fail  { --sprout-pivot: 23.5%; }   /* 01 */
+.toon.a-shrug { --sprout-pivot: 21.1%; }   /* 08 */
+.toon.a-no    { --sprout-pivot: 26.2%; }   /* 03 */
+
+/* ---- 기다리는 중 / 오르는 중 : 느린 숨 (계속 반복) ---- */
+@keyframes toon-breathe {
+  0%, 100% { transform: translateY(0) scale(1, 1) rotate(0deg); }
+  50%      { transform: translateY(-3px) scale(0.992, 1.014) rotate(0.9deg); }
+}
+@keyframes toon-sway {
+  0%, 100% { transform: rotate(-6deg); }
+  50%      { transform: rotate(6deg); }
+}
+/* 새싹은 몸보다 조금 늦게 따라온다. 음수 지연으로 위상을 어긋나게 둔다 */
+.a-wait .toon-move   { animation: toon-breathe 4.4s ease-in-out infinite; }
+.a-wait .toon-sprout { animation: toon-sway 5.2s ease-in-out infinite -0.5s; }
+.a-calm .toon-move   { animation: toon-breathe 2.8s ease-in-out infinite; }
+.a-calm .toon-sprout { animation: toon-sway 3.1s ease-in-out infinite -0.35s; }
+
+/* ---- 곧 될 것 같음 : 들썩들썩 (계속 반복) ---- */
+@keyframes toon-perk {
+  0%   { transform: translateY(0) scale(1, 1) rotate(0deg); }
+  18%  { transform: translateY(3px) scale(1.05, 0.95) rotate(0deg); }
+  45%  { transform: translateY(-13px) scale(0.95, 1.06) rotate(-2deg); }
+  70%  { transform: translateY(0) scale(1.03, 0.97) rotate(1.4deg); }
+  100% { transform: translateY(0) scale(1, 1) rotate(0deg); }
+}
+@keyframes toon-wag {
+  0%, 100% { transform: rotate(-15deg); }
+  50%      { transform: rotate(15deg); }
+}
+@keyframes toon-shadow-perk {
+  0%, 100% { transform: translateX(-50%) scale(1); }
+  45%      { transform: translateX(-50%) scale(0.86); }
+}
+.a-perk .toon-move   { animation: toon-perk 0.92s ease-in-out infinite; }
+.a-perk .toon-sprout { animation: toon-wag 0.46s ease-in-out infinite -0.1s; }
+
+/* ---- 통과 : 웅크렸다 솟구치고, 착지 후 두어 번 출렁 (한 번) ---- */
+@keyframes toon-jump {
+  0%   { transform: translateY(0) scale(1, 1) rotate(0deg); }
+  10%  { transform: translateY(7px) scale(1.16, 0.82) rotate(0deg); }
+  16%  { transform: translateY(2px) scale(1.06, 0.94) rotate(0deg); }
+  34%  { transform: translateY(-62px) scale(0.86, 1.2) rotate(-4deg); }
+  48%  { transform: translateY(-74px) scale(1, 1) rotate(2deg); }
+  64%  { transform: translateY(-20px) scale(0.93, 1.1) rotate(0deg); }
+  74%  { transform: translateY(4px) scale(1.2, 0.8) rotate(0deg); }
+  84%  { transform: translateY(-14px) scale(0.97, 1.05) rotate(0deg); }
+  92%  { transform: translateY(2px) scale(1.06, 0.95) rotate(0deg); }
+  100% { transform: translateY(0) scale(1, 1) rotate(0deg); }
+}
+@keyframes toon-jump-sprout {
+  0%   { transform: rotate(0deg); }
+  12%  { transform: rotate(10deg); }
+  36%  { transform: rotate(-30deg); }
+  58%  { transform: rotate(22deg); }
+  78%  { transform: rotate(-14deg); }
+  90%  { transform: rotate(7deg); }
+  100% { transform: rotate(0deg); }
+}
+@keyframes toon-shadow-jump {
+  0%   { transform: translateX(-50%) scale(1); }
+  10%  { transform: translateX(-50%) scale(1.12); }
+  48%  { transform: translateX(-50%) scale(0.46); }
+  74%  { transform: translateX(-50%) scale(1.15); }
+  100% { transform: translateX(-50%) scale(1); }
+}
+.a-pass .toon-move   { animation: toon-jump 1.25s cubic-bezier(0.33, 0.9, 0.45, 1) both; }
+.a-pass .toon-sprout { animation: toon-jump-sprout 1.25s ease-in-out both; }
+
+/* ---- 실패 : 힘이 빠져 주저앉는다 (한 번) ---- */
+@keyframes toon-deflate {
+  0%   { transform: translateY(0) scale(1, 1); }
+  14%  { transform: translateY(-5px) scale(0.97, 1.04); }
+  48%  { transform: translateY(11px) scale(1.09, 0.9); }
+  70%  { transform: translateY(8px) scale(1.05, 0.94); }
+  100% { transform: translateY(12px) scale(1.07, 0.92); }
+}
+@keyframes toon-droop {
+  0%   { transform: rotate(0deg); }
+  18%  { transform: rotate(-7deg); }
+  100% { transform: rotate(21deg); }
+}
+@keyframes toon-shadow-flat {
+  0%   { transform: translateX(-50%) scale(1); }
+  48%  { transform: translateX(-50%) scale(1.14); }
+  100% { transform: translateX(-50%) scale(1.1); }
+}
+.a-fail .toon-move   { animation: toon-deflate 1.2s ease-out both; }
+.a-fail .toon-sprout { animation: toon-droop 1.4s ease-out both; }
+
+/* ---- 찬스 꽝 : 어깨 으쓱 (한 번) ---- */
+@keyframes toon-shrug {
+  0%   { transform: translateY(0) rotate(0deg); }
+  20%  { transform: translateY(-9px) rotate(-4deg); }
+  45%  { transform: translateY(-9px) rotate(4deg); }
+  68%  { transform: translateY(1px) rotate(-1.5deg); }
+  100% { transform: translateY(0) rotate(0deg); }
+}
+@keyframes toon-shrug-sprout {
+  0%   { transform: rotate(0deg); }
+  30%  { transform: rotate(14deg); }
+  60%  { transform: rotate(-11deg); }
+  100% { transform: rotate(0deg); }
+}
+.a-shrug .toon-move   { animation: toon-shrug 1.35s ease-in-out both; }
+.a-shrug .toon-sprout { animation: toon-shrug-sprout 1.35s ease-in-out both; }
+
+/* ---- 한도 소진 : 고개 젓기 (한 번) ---- */
+@keyframes toon-shake {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  15% { transform: translateX(-11px) rotate(-3deg); }
+  32% { transform: translateX(10px) rotate(3deg); }
+  50% { transform: translateX(-8px) rotate(-2.2deg); }
+  68% { transform: translateX(6px) rotate(1.6deg); }
+  85% { transform: translateX(-3px) rotate(-0.8deg); }
+}
+@keyframes toon-shake-sprout {
+  0%, 100% { transform: rotate(0deg); }
+  22% { transform: rotate(18deg); }
+  48% { transform: rotate(-16deg); }
+  72% { transform: rotate(9deg); }
+}
+.a-no .toon-move   { animation: toon-shake 0.85s ease-in-out both; }
+.a-no .toon-sprout { animation: toon-shake-sprout 0.85s ease-in-out both; }
+
+/* 그림자는 .toon 바깥(형제)이라 '.a-pass .toon-shadow'로는 안 잡힌다.
+   그래서 무대가 '이 상태의 캐릭터를 품고 있으면'(:has)으로 고른다.
+   (시안에서는 이 부분이 실제로는 걸리지 않고 있었다) */
+.toon-stage:has(.a-perk) .toon-shadow { animation: toon-shadow-perk 0.92s ease-in-out infinite; }
+.toon-stage:has(.a-pass) .toon-shadow { animation: toon-shadow-jump 1.25s cubic-bezier(0.33, 0.9, 0.45, 1) both; }
+.toon-stage:has(.a-fail) .toon-shadow { animation: toon-shadow-flat 1.2s ease-out both; }
+
+/* 움직임 줄이기를 켠 사람에게는 캐릭터도 멈춘다.
+   (파일 맨 아래 규칙이 모든 애니메이션을 끄지만, 캐릭터는 여기서도 확실히 해 둔다) */
+@media (prefers-reduced-motion: reduce) {
+  .toon-move,
+  .toon-sprout,
+  .toon-shadow {
+    animation: none !important;
+  }
+}
+
 /* ─────────────────────────────────────────────────────────────
    다크 모드
    ───────────────────────────────────────────────────────────── */
@@ -1125,6 +1366,11 @@ code {
     --danger-soft: #5a3040;
     --focus: #8fc7ef;
     --shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+
+    /* 캐릭터: 어두운 바탕에서는 밝은 cream 그림을 쓴다 */
+    --toon-tone: cream;
+    --toon-shadow-color: #000;
+    --toon-shadow-opacity: 0.34;
   }
 
   body {

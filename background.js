@@ -798,6 +798,48 @@ async function buildStatus(site) {
 // 판정 / 이용 시작 / 이용 종료
 // ─────────────────────────────────────────────────────────────
 
+// 테스트 칸 (차단 화면 맨 아래). config.js의 testTools가 true일 때만 받는다.
+//
+// changes: { elapsedMin } 또는 { usedTodayMin } (둘 다 있어도 된다)
+//   elapsedMin   : 기다린 시간을 이 분으로 만든다 → 기준 시각을 '지금 - 이만큼'으로
+//   usedTodayMin : 오늘 쓴 시간을 이 분으로 만든다. 공유 중에는 거절한다
+async function testSet(site, changes) {
+  if (!CONFIG.testTools) {
+    return { ok: false, error: '테스트 칸이 꺼져 있습니다 (config.js의 testTools)' };
+  }
+
+  // 화면 값은 믿지 않는다. 숫자인지, 0~testMaxMinutes 안인지 여기서 본다
+  const toMinutes = (value) => {
+    const num = Number(value);
+    return Number.isFinite(num) && num >= 0 && num <= CONFIG.testMaxMinutes ? num : null;
+  };
+
+  if (changes.elapsedMin !== undefined) {
+    const minutes = toMinutes(changes.elapsedMin);
+    if (minutes === null) return { ok: false, error: `기다린 시간은 0~${CONFIG.testMaxMinutes}분` };
+
+    const waitStartAt = Date.now() - minutes * 60000;
+    await saveState(site, { waitStartAt });
+
+    // 공유 중이면 서버에도 보낸다. 안 보내면 2초 동기화가 서버 값으로 바로 되돌린다.
+    // 원래 있던 함수(set_wait_start)라 새로 열리는 구멍은 없다.
+    await pushWaitStart(site, waitStartAt);
+  }
+
+  if (changes.usedTodayMin !== undefined) {
+    if (await getSharedRowId(site)) {
+      return { ok: false, error: '공유 코드를 쓰는 중에는 오늘 사용량을 바꿀 수 없습니다' };
+    }
+    const minutes = toMinutes(changes.usedTodayMin);
+    if (minutes === null) return { ok: false, error: `오늘 사용량은 0~${CONFIG.testMaxMinutes}분` };
+
+    await saveState(site, { usedTodayMin: minutes });
+  }
+
+  return { ok: true, status: await buildStatus(site) };
+}
+
+
 // 주사위 한 번. 시도하기와 찬스가 이 함수 하나를 같이 쓴다.
 //
 // 0 이상 100 미만의 난수를 뽑아 확률과 비교한다.
@@ -1089,7 +1131,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 
 // 사이트(message.site)가 꼭 있어야 하는 요청들. 차단 화면이 보낸다.
-const SITE_MESSAGES = ['GET_STATUS', 'ATTEMPT', 'SYNC_SHARED', 'START_SESSION', 'CHANCE'];
+const SITE_MESSAGES = ['GET_STATUS', 'ATTEMPT', 'SYNC_SHARED', 'START_SESSION', 'CHANCE', 'TEST_SET'];
 
 async function handleMessage(message, sender) {
   // 차단 화면이 보낸 사이트가 목록에 있는지 먼저 본다. 없으면 아무것도 하지 않는다.
@@ -1160,6 +1202,13 @@ async function handleMessage(message, sender) {
 
     case 'CHANCE':
       return await useChance(site);
+
+    // 테스트 칸. 꺼져 있으면 testSet이 거절한다
+    case 'TEST_SET':
+      return await testSet(site, {
+        elapsedMin: message.elapsedMin,
+        usedTodayMin: message.usedTodayMin
+      });
 
     default:
       return { error: '알 수 없는 요청: ' + message.type };

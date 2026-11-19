@@ -28,6 +28,22 @@
       </span>
     </div>
 
+    <!--
+      캐릭터(새싹이). 움직임은 전부 extension.css, 상태 바꾸기는 blocked.js.
+      #toon에 a-wait / a-calm / a-perk / a-pass / a-fail / a-shrug / a-no 중 하나가 붙는다.
+      몸 전체 움직임은 .toon-move 하나에만 건다 (몸통과 새싹이 같이 움직여야 안 떨어진다).
+      그림 주소(src)는 blocked.js가 상태·다크 모드에 맞춰 넣는다.
+    -->
+    <div class="toon-stage">
+      <div class="toon-shadow"></div>
+      <div class="toon" id="toon">
+        <div class="toon-move">
+          <img class="toon-body"   id="toonBody"   alt="">
+          <img class="toon-sprout" id="toonSprout" alt="">
+        </div>
+      </div>
+    </div>
+
     <p id="prob">--%</p>
     <p id="info">불러오는 중...</p>
     <p id="syncInfo"></p>
@@ -65,6 +81,32 @@
     <div class="settings-row">
       <button id="settingsBtn">설정</button>
     </div>
+
+    <!--
+      테스트 칸. config.js의 testTools가 true일 때만 blocked.js가 hidden을 푼다.
+      배포 zip에서는 make_release.py가 testTools를 false로 바꿔서 안 보인다.
+    -->
+    <section id="testBox" class="test-box" hidden>
+      <h3 class="table-title">테스트 (이 사이트만)</h3>
+      <div class="test-row">
+        <label for="testElapsed">기다린 시간</label>
+        <input id="testElapsed" type="number" min="0" step="1" value="80">
+        <span>분</span>
+        <button id="testElapsedBtn">적용</button>
+      </div>
+      <div class="test-row">
+        <button data-test-elapsed="0">0분으로</button>
+        <button data-test-add="10">+10분</button>
+        <button data-test-add="30">+30분</button>
+      </div>
+      <div class="test-row">
+        <label for="testUsed">오늘 사용</label>
+        <input id="testUsed" type="number" min="0" step="1" value="0">
+        <span>분</span>
+        <button id="testUsedBtn">적용</button>
+      </div>
+      <p id="testMsg" class="hint"></p>
+    </section>
   </main>
 
     <!--

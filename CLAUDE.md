@@ -42,8 +42,12 @@
 **오류 확인**: `chrome://extensions`에서 **"서비스 워커"** 링크를 누르면
 `background.js` 전용 콘솔이 열린다. Supabase 관련 경고는 `[supabase]`로 시작한다.
 
-**테스트 칸(`devMode`)은 없앴다** (2026-10-28). 80분 확률을 보려면 설정 화면의
-곡선 미리보기를 보거나, `probability.js`의 `calcProb`를 콘솔에서 직접 부르면 된다.
+**테스트 칸 다시 만듦** (2026-11-19, 차단 화면 맨 아래). `config.js`의 `testTools: true`일 때만 보인다.
+- 기다린 시간(분 입력, 0분으로, +10, +30)과 오늘 사용량을 **이 사이트만** 바꾼다. 메시지 `TEST_SET`
+- 기다린 시간은 공유 중이면 원래 있던 `set_wait_start`로 서버에도 보낸다 (안 보내면 2초 동기화가 되돌림)
+- **오늘 사용량은 공유 중이면 거절.** 서버 사용량을 덮어쓰는 함수(`dev_set_used_minutes`)는 남의 사용량을
+  0으로 되돌리는 구멍이라 다시 만들지 않는다
+- `testTools`가 false면 background도 거절 (콘솔 우회 차단). **배포 zip은 make_release.py가 자동으로 false로**
 
 ---
 
@@ -97,6 +101,7 @@ background.js가 난수(0~100)를 뽑아 확률과 비교
 | `README.md` | 처음 보는 사람용 소개·설치 방법. CLAUDE.md는 AI용 작업 메모 |
 | `dashboard/index.html` / `app.js` | 웹 대시보드 화면. 공유 코드로 `/api/stats`에 묻고 그린다 |
 | `dashboard/api/stats.js` | Vercel 서버 함수. 환경변수(`SUPABASE_URL`, `SUPABASE_ANON_KEY`)의 키로 `get_stats` 호출 |
+| `images/` | 차단 화면 캐릭터 그림 28장. `navy-0N-body/sprout.png`(밝은 화면) + `cream-…`(다크). 시안은 `새싹이 움직임 시안.zip` |
 | `tools/make_release.py` | 배포용 zip을 만든다. anon 키 확인 + 확장 파일만 |
 | `release/` | 만든 zip이 나오는 곳. **anon 키가 들어 있어 `.gitignore`에 있다** |
 
@@ -704,6 +709,20 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 - 1·2단계 브라우저에서 확인됨 (사용자: "따로 구분돼") → 커밋 `dbbf810`
 - **모의 판정 제거** (사용자 요청). `testRolls`, `TEST_ROLLS`, 차단 화면 버튼·표, `testRollMinutes`/`testRollTimes`.
   주사위 함수 `rollDice`는 시도·찬스가 같이 쓰므로 남김
+- **차단 화면 캐릭터(새싹이)** — 확률 카드 맨 위 `.toon-stage` (`#toon` `#toonBody` `#toonSprout`)
+  - 움직임은 시안 `index.html`의 키프레임을 `toon-` 이름으로 옮김. 몸 전체는 `.toon-move`(기준 발밑)에만, 새싹은 회전만
+  - 새싹 기준점: 기본 27%, **그림별로 시안 PIVOT 값**(07=35.2% 등). 27% 통일이면 07에서 새싹이 떨어져 보여서
+  - 그림자는 `.toon` 바깥이라 `.toon-stage:has(.a-pass)`로 고름 (시안에서는 안 걸리던 부분)
+  - 다크 모드: CSS 변수 `--toon-tone`(navy/cream)을 JS가 읽어 그림 주소를 만든다
+  - blocked.js: 평소(a-wait/calm/perk, 경계는 config `toonCalmFromProb` 20 / `toonPerkFromProb` 50)와
+    반응(a-pass/fail/shrug/no). **같은 class면 다시 안 붙인다** (1초 갱신이 애니메이션을 처음으로 되돌리지 않게)
+  - 반응은 몸·새싹 **둘 다** animationend 뒤에 평소로 (실패는 1.2초/1.4초로 길이가 다름).
+    움직임 줄이기면 animationend가 안 와서 `toonStillReactionMs` 뒤에 돌아감
+  - a-no는 남은 한도가 0이 **되는 순간**(화면 열 때 이미 0이면 처음 한 번)만. 찬스 당첨도 a-pass
+  - make_release.py: `EXTENSION_FOLDERS = ['images']` (폴더가 비면 멈춤)
+  - **아이콘은 보류**: zip에 `icons/`가 없음. 없는 파일을 manifest에 적으면 확장이 로드되지 않는다
+- **테스트 칸 다시 만듦** (사용자 요청, 캐릭터 구간 확인용). 위 "실행 / 테스트 방법" 참고.
+  사용자 선택: 기다린 시간 + 오늘 사용량 / zip에서 자동으로 끄기
 
 ---
 
