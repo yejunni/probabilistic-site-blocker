@@ -95,7 +95,8 @@ background.js가 난수(0~100)를 뽑아 확률과 비교
 | `supabase/stats.sql` | 통계 함수 `get_stats`. **2번째로 실행** |
 | `supabase/shared_state.sql` | 한도 공유 표 + 함수 5개(`use_chance` 포함) + 옛 테스트 함수 삭제. **3번째로 실행** (재실행해도 안전) |
 | `README.md` | 처음 보는 사람용 소개·설치 방법. CLAUDE.md는 AI용 작업 메모 |
-| `dashboard/index.html` / `app.js` | 웹 대시보드 화면. 공유 코드로 `/api/stats`에 묻고 그린다 |
+| `dashboard/index.html` / `app.js` | 웹 사이트 화면. `app.js`는 공유 코드로 `/api/stats`에 묻고 기록을 그린다 (id 6개: `codeForm` `codeInput` `message` `result` `statsCards` `dailyBody`) |
+| `dashboard/site.css` / `guide.js` / `img/` | 안내 사이트 디자인(사용자 작업, 2026-11-21). `guide.js`는 주소 복사 + 설치 단계 체크 기억만 |
 | `dashboard/api/stats.js` | Vercel 서버 함수. 환경변수(`SUPABASE_URL`, `SUPABASE_ANON_KEY`)의 키로 `get_stats` 호출 |
 | `images/` | 차단 화면 캐릭터 그림 28장. `navy-0N-body/sprout.png`(밝은 화면) + `cream-…`(다크). 시안은 `새싹이 움직임 시안.zip` |
 | `tools/make_release.py` | 배포용 zip을 만든다. anon 키 확인 + 확장 파일만 |
@@ -747,6 +748,11 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
 - 문법 검사: node가 없어 **Edge headless**로 화면별 스크립트를 올려 SyntaxError만 잡음 → 전부 OK
 - **아직 실제 브라우저 확인 안 함**
 
+### 2026-11-21 [Claude Code] — 안내 사이트 새 디자인
+- 사용자가 만든 `안내사이트-캐릭터판/dashboard`를 `dashboard/`에 덮어씀 (`index.html` `site.css` `guide.js` `img/` 24장)
+  - `app.js` `api/stats.js`는 새 폴더에 없어서 **그대로 둠**. 새 index.html이 같은 id와 `app.js`를 쓰는 것 확인
+- `manifest.json` version `0.1` → `1.1`. 사이트가 새 기능(사이트 추가·끄기)을 소개하므로 **Releases에 v1.1 zip을 올려야** 다운로드와 맞는다
+
 ---
 
 ## 보고서용 요약
@@ -794,7 +800,7 @@ storage의 **`settings` 키 하나에 통째로** 들어가 기본값을 덮어�
    - ~~1단계: 차단·통과 규칙을 `config.js`에서~~ (2026-11-16 완료)
    - 2단계: `content_scripts`를 `chrome.scripting`으로, `reloadYoutubeTabs()`도 목록으로
    - ~~3단계: 설정 화면에서 사이트 추가/삭제~~ (2026-11-19 완료, `siteList`)
-5. **`manifest.json`의 `version`이 아직 `0.1`** — 릴리스는 `v1.0`. 맞추려면 물어보고 고칠 것
+5. ~~`manifest.json`의 `version`이 `0.1`~~ → **`1.1`** (2026-11-21, 사용자 허락). 릴리스도 `v1.1`로
 6. **제출 전 점검**
    - Vercel 대표 주소가 시크릿 창에서 로그인 없이 열리는지
    - README에 스크린샷 추가

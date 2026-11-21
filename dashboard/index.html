@@ -3,85 +3,296 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>확률 기반 사이트 차단</title>
-  <!-- 꾸미기는 나중에 한 번에 한다. 지금은 읽을 수 있을 정도만 -->
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 24px auto; padding: 0 16px; }
-    .cards { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0; }
-    .stat-card { flex: 1; min-width: 150px; border: 1px solid #ccc; border-radius: 8px; padding: 12px; }
-    .stat-card .big { font-size: 1.4em; font-weight: bold; margin: 4px 0; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border-bottom: 1px solid #ddd; padding: 6px; text-align: right; }
-    th:first-child, td:first-child { text-align: left; }
-    .warn { color: #c62828; }
-  </style>
+  <title>확률 기반 사이트 차단 — 설치와 사용 방법</title>
+  <meta name="description" content="차단할 사이트에 들어가면 바로 열어 주지 않고, 기다린 시간만큼 오른 확률로 통과 여부를 정하는 크롬 확장 프로그램입니다. 다운로드와 설치 방법, 내 기록 보기.">
+  <meta name="color-scheme" content="light dark">
+
+  <!-- 글꼴. CDN이 막히면 site.css 뒤쪽의 시스템 한글 글꼴로 자동으로 넘어간다 -->
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+  <link rel="stylesheet" href="site.css">
 </head>
 <body>
-  <h1>확률 기반 사이트 차단</h1>
-  <p>
-    유튜브에 들어가면 바로 열어주지 않고 <b>확률로</b> 통과 여부를 정하는 크롬 확장 프로그램입니다.
-    오래 참을수록 통과 확률이 올라가고, 통과하면 하루 한도 안에서 고른 시간만큼만 볼 수 있습니다.
-  </p>
 
-  <h2>다운로드</h2>
-  <!-- zip은 GitHub Releases에 올려 둔다. 'latest' 주소라 새 버전을 올려도 이 링크는 그대로다.
-       zip에는 Supabase anon 키가 들어 있어서 저장소 코드에는 넣지 않았다 (tools/make_release.py 참고) -->
-  <p>
-    <a href="https://github.com/yejunni/probabilistic-site-blocker/releases/latest/download/probabilistic-site-blocker.zip">
-      확장 프로그램 받기 (.zip)
-    </a>
-  </p>
+<a class="skip-link" href="#main">본문으로 건너뛰기</a>
 
-  <h2>설치 방법</h2>
-  <ol>
-    <li>받은 zip 파일의 <b>압축을 풉니다.</b> <code>probabilistic-site-blocker</code> 폴더가 나옵니다.</li>
-    <li>크롬 주소창에 <code>chrome://extensions</code>를 입력합니다.</li>
-    <li>오른쪽 위 <b>개발자 모드</b>를 켭니다.</li>
-    <li><b>"압축해제된 확장 프로그램을 로드"</b>를 누르고 압축을 푼 폴더를 고릅니다.</li>
-  </ol>
-  <p>
-    크롬 웹 스토어를 거치지 않은 확장이라 개발자 모드가 필요합니다.
-    압축을 푼 폴더를 지우면 확장도 작동하지 않으니 남겨 두세요.
-  </p>
+<header class="wrap hero">
+  <div class="hero-text">
+    <p class="brand">
+      <img src="img/mark.png" alt="" width="128" height="128">
+      <span class="eyebrow">크롬 확장 프로그램</span>
+    </p>
+    <h1>확률 기반<br>사이트 차단</h1>
+    <p class="hero-lead">
+      막고 싶은 사이트에 들어가도 바로 열어 주지 않습니다.
+      <b>기다린 시간만큼 오른 확률</b>로 통과 여부를 정하고, 통과하면 하루 한도 안에서
+      고른 시간만큼만 볼 수 있습니다. 실패하면 기다린 시간은 0으로 돌아갑니다.
+    </p>
+    <div class="actions">
+      <a class="btn btn-primary"
+         href="https://github.com/yejunni/probabilistic-site-blocker/releases/latest/download/probabilistic-site-blocker.zip">
+        확장 프로그램 받기 (.zip)
+      </a>
+      <a class="btn" href="https://github.com/yejunni/probabilistic-site-blocker">GitHub에서 보기</a>
+    </div>
+    <p class="hint">설치는 1분 걸립니다. 아래 <a href="#install">설치 방법</a>을 그대로 따라 하면 됩니다.</p>
+    <ul class="badges" aria-label="사용한 기술">
+      <li class="badge">Manifest V3</li>
+      <li class="badge">Supabase</li>
+      <li class="badge">Vercel</li>
+    </ul>
+  </div>
 
-  <h2>사용 방법</h2>
-  <ol>
-    <li>유튜브에 들어가면 <b>차단 화면</b>이 뜹니다. 기다린 시간에 따라 통과 확률이 올라갑니다.</li>
-    <li><b>[시도하기]</b>를 누르면 확률로 판정합니다.
-      <ul>
-        <li>통과: 1분 ~ 남은 한도 사이에서 볼 시간을 정하면 유튜브가 열립니다.
-          시간이 끝나면 다시 차단됩니다.</li>
-        <li>실패: 기다린 시간이 0으로 돌아갑니다. 한 번의 시도를 신중하게 하라는 뜻입니다.</li>
-      </ul>
-    </li>
-    <li>곡선 모양, 하루 한도 같은 설정은 주소창 오른쪽 <b>퍼즐 조각(🧩) → 확장 이름</b>이나
-      차단 화면의 <b>[설정]</b>에서 바꿉니다.</li>
-    <li>설정의 <b>공유 코드</b>에 나만 아는 코드를 넣으면, 다른 프로필·컴퓨터에서도
-      하루 한도와 기록이 하나로 묶입니다. 아래에서 그 코드로 기록도 볼 수 있습니다.</li>
-  </ol>
+  <div class="toon" data-s="04" role="img" aria-label="머리에 새싹이 난 캐릭터가 들떠서 들썩이고 있다."><span class="toon-body"></span><span class="toon-sprout"></span></div>
+</header>
 
-  <h2>내 기록 보기</h2>
-  <p>확장 설정에 넣은 <b>공유 코드</b>를 입력하면 기록 요약을 볼 수 있습니다.</p>
+<main id="main">
 
-  <form id="codeForm">
-    <input id="codeInput" placeholder="공유 코드" autocomplete="off" required>
-    <button type="submit">불러오기</button>
-  </form>
-  <p id="message"></p>
+  <!-- ---------- 어떻게 동작하나 ---------- -->
+  <section class="wrap" aria-labelledby="how-title">
+    <div class="section-head">
+      <p class="eyebrow">한눈에 보기</p>
+      <h2 id="how-title">어떻게 동작하나요?</h2>
+      <p>기존 차단 앱은 시간이 되면 무조건 막습니다. 이 확장은 막는 대신 <b>확률이라는 마찰</b>을 둡니다.</p>
+    </div>
 
-  <!-- 불러오기 전에는 숨겨 둔다. app.js가 hidden을 끈다 -->
-  <section id="result" hidden>
-    <div id="statsCards" class="cards"></div>
-
-    <h2>최근 7일</h2>
-    <table>
-      <thead>
-        <tr><th>날짜</th><th>시도</th><th>통과</th><th>이용 시간</th></tr>
-      </thead>
-      <tbody id="dailyBody"></tbody>
-    </table>
+    <ol class="grid-3">
+      <li class="card flow-card">
+        <div class="toon" data-s="07" aria-hidden="true"><span class="toon-body"></span><span class="toon-sprout"></span></div>
+        <div>
+          <p class="flow-step">STEP 1</p>
+          <h3>기다릴수록 확률이 오른다</h3>
+          <p>마지막으로 본 뒤 오래 참을수록 통과 확률이 올라갑니다. 초반에는 아주 느리게 오릅니다.</p>
+        </div>
+      </li>
+      <li class="card flow-card">
+        <div class="toon" data-s="04" aria-hidden="true"><span class="toon-body"></span><span class="toon-sprout"></span></div>
+        <div>
+          <p class="flow-step">STEP 2</p>
+          <h3>시도하면 주사위를 굴린다</h3>
+          <p>그 순간의 확률로 판정합니다. 실패하면 기다린 시간이 0으로 돌아가서, 한 번의 시도가 무겁습니다.</p>
+        </div>
+      </li>
+      <li class="card flow-card">
+        <div class="toon" data-s="06" aria-hidden="true"><span class="toon-body"></span><span class="toon-sprout"></span></div>
+        <div>
+          <p class="flow-step">STEP 3</p>
+          <h3>시간을 정하고 들어간다</h3>
+          <p>통과하면 하루 남은 한도 안에서 볼 시간을 직접 정합니다. 그 시간이 끝나면 열려 있던 탭까지 다시 차단됩니다.</p>
+        </div>
+      </li>
+    </ol>
   </section>
 
-  <script src="app.js"></script>
+
+  <!-- ---------- 할 수 있는 것 ---------- -->
+  <section class="wrap" aria-labelledby="feat-title">
+    <div class="section-head">
+      <p class="eyebrow">기능</p>
+      <h2 id="feat-title">무엇을 할 수 있나요?</h2>
+    </div>
+
+    <div class="feature-grid">
+      <div class="card feature">
+        <span class="tagline">새로 생김</span>
+        <h3>막을 사이트를 직접 고릅니다</h3>
+        <p>
+          설정 화면에서 사이트를 <b>추가하고 지울 수</b> 있습니다. 주소를 통째로 붙여 넣어도
+          <code>naver.com</code> 같은 모양으로 알아서 다듬습니다. 자주 쓰는 사이트는 버튼 한 번으로 더할 수 있고요.
+        </p>
+      </div>
+
+      <div class="card feature">
+        <span class="tagline">새로 생김</span>
+        <h3>잠깐 꺼 둘 수도 있습니다</h3>
+        <p>
+          목록에서 빼지 않고 <b>스위치로 끄기만</b> 해도 됩니다. 과제 때문에 잠깐 필요한 사이트를
+          매번 지웠다 넣을 필요가 없습니다.
+        </p>
+      </div>
+
+      <div class="card feature">
+        <h3>사이트마다 따로 셉니다</h3>
+        <p>
+          유튜브에서 실패해도 다른 사이트의 기다린 시간은 그대로입니다. 하루 한도와 확률 곡선도
+          사이트마다 따로 정할 수 있습니다.
+        </p>
+      </div>
+
+      <div class="card feature">
+        <h3>남은 시간이 화면에 떠 있습니다</h3>
+        <p>
+          보는 동안 오른쪽 위에 남은 시간이 계속 표시되고, 마지막 1분에는 빨갛게 바뀝니다.
+          시간이 끝나면 보고 있던 탭도 새로고침되어 다시 차단 화면으로 돌아갑니다.
+        </p>
+      </div>
+
+      <div class="card feature">
+        <h3>하루 한 번은 기다리지 않아도 됩니다</h3>
+        <p>
+          <b>오늘의 찬스</b>는 기다린 시간과 상관없이 하루 한 번 쓸 수 있습니다.
+          꽝이어도 기다린 시간은 그대로 남습니다.
+        </p>
+      </div>
+
+      <div class="card feature">
+        <h3>프로필을 바꿔도 한도는 하나입니다</h3>
+        <p>
+          설정의 <b>공유 코드</b>에 나만 아는 코드를 넣으면, 다른 크롬 프로필이나 다른 컴퓨터에서도
+          하루 한도와 기록이 하나로 묶입니다. 비밀번호가 아니라 이름표이니 짐작하기 어렵게 지으세요.
+        </p>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ---------- 설치 방법 ---------- -->
+  <section class="wrap" id="install" aria-labelledby="install-title">
+    <div class="section-head">
+      <p class="eyebrow">설치 방법</p>
+      <h2 id="install-title">5단계로 끝납니다</h2>
+      <p>
+        크롬 웹 스토어를 거치지 않은 확장이라 개발자 모드가 필요합니다.
+        체크해 두면 이 브라우저가 <b>어디까지 했는지 기억</b>하므로, 중간에 창을 닫아도 됩니다.
+      </p>
+    </div>
+
+    <!-- 체크 상태는 guide.js가 localStorage에 적어 둔다 -->
+    <ol class="steps" id="steps">
+      <li class="step" data-step="1">
+        <input class="step-check" type="checkbox" id="step1">
+        <div class="step-body">
+          <label class="step-title" for="step1">받은 zip의 압축을 풉니다</label>
+          <p>
+            위의 <b>[확장 프로그램 받기]</b>를 누르면 zip 파일이 내려옵니다.
+            압축을 풀면 <code>probabilistic-site-blocker</code> 폴더가 나옵니다.
+          </p>
+          <p class="callout">
+            이 폴더는 <b>그 자리에 그대로 둬야 합니다.</b>
+            옮기거나 지우면 확장이 멈춥니다. 크롬이 이 폴더를 계속 읽기 때문입니다.
+          </p>
+        </div>
+      </li>
+
+      <li class="step" data-step="2">
+        <input class="step-check" type="checkbox" id="step2">
+        <div class="step-body">
+          <label class="step-title" for="step2">확장 관리 화면을 엽니다</label>
+          <p>
+            크롬 <b>주소창에 직접 입력</b>해야 합니다. 구글에 검색해서는 나오지 않고,
+            보안 때문에 이 페이지에서 링크로 걸 수도 없습니다. 아래 버튼으로 복사해 붙여 넣으세요.
+          </p>
+          <div class="copy-row">
+            <span class="copy-target" id="copyText">chrome://extensions</span>
+            <button class="btn btn-sm" type="button" id="copyBtn" data-copy="chrome://extensions">주소 복사</button>
+            <span class="copy-done" id="copyDone" role="status" aria-live="polite"></span>
+          </div>
+          <img class="step-shot" src="img/addressbar.png" width="460" height="64" loading="lazy"
+               alt="크롬 주소창에 chrome://extensions 를 입력한 모습.">
+        </div>
+      </li>
+
+      <li class="step" data-step="3">
+        <input class="step-check" type="checkbox" id="step3">
+        <div class="step-body">
+          <label class="step-title" for="step3">개발자 모드를 켜고 로드를 누릅니다</label>
+          <p>
+            화면 <b>오른쪽 위의 개발자 모드</b>를 켜면, 왼쪽 위에
+            <b>[압축해제된 확장 프로그램을 로드]</b> 버튼이 새로 나타납니다. 그 버튼을 누르세요.
+          </p>
+          <img class="step-shot" src="img/devmode.png" width="1100" height="95" loading="lazy"
+               alt="확장 관리 화면 상단. 왼쪽에 압축해제된 확장 프로그램을 로드 버튼, 오른쪽에 켜져 있는 개발자 모드 스위치가 있다.">
+        </div>
+      </li>
+
+      <li class="step" data-step="4">
+        <input class="step-check" type="checkbox" id="step4">
+        <div class="step-body">
+          <label class="step-title" for="step4">압축을 푼 폴더를 고릅니다</label>
+          <p>
+            폴더 선택 창이 열리면 1단계에서 압축을 푼 <code>probabilistic-site-blocker</code> 폴더를
+            고릅니다. 폴더 <b>안의 파일을 고르는 것이 아니라 폴더 자체를</b> 골라야 합니다.
+          </p>
+        </div>
+      </li>
+
+      <li class="step" data-step="5">
+        <input class="step-check" type="checkbox" id="step5">
+        <div class="step-body">
+          <label class="step-title" for="step5">설정에서 막을 사이트를 고릅니다</label>
+          <p>
+            목록에 <b>확률 기반 사이트 차단</b> 카드가 생기면 설치가 끝난 겁니다.
+            설정은 주소창 오른쪽 <b>퍼즐 조각 아이콘 → 확장 이름</b>이나 차단 화면의 [설정] 버튼에서 엽니다.
+            맨 위 칸에서 막을 사이트를 더하거나 끌 수 있습니다.
+          </p>
+          <img class="step-shot" src="img/extensions.png" width="1100" height="241" loading="lazy"
+               alt="확장 관리 화면에 확률 기반 사이트 차단 카드가 설치되어 있는 모습.">
+        </div>
+      </li>
+    </ol>
+
+    <p class="hint section-note">
+      <b>새 버전으로 바꿀 때는</b>
+      <a href="https://github.com/yejunni/probabilistic-site-blocker/releases">GitHub의 Releases</a>에서
+      받는 편이 좋습니다. 자동 업데이트가 없는 대신, 버전마다 무엇이 바뀌었는지 함께 볼 수 있습니다.
+      새 폴더를 받아 압축을 푼 뒤 기존 것을 삭제하고 다시 로드하면 됩니다.
+    </p>
+  </section>
+
+
+  <!-- ---------- 내 기록 보기 ---------- -->
+  <section class="wrap" id="stats" aria-labelledby="stats-title">
+    <div class="section-head">
+      <p class="eyebrow">내 기록 보기</p>
+      <h2 id="stats-title">공유 코드로 기록을 불러옵니다</h2>
+      <p>확장 설정에 넣어 둔 공유 코드를 입력하세요. 한 번 불러오면 이 브라우저가 기억합니다.</p>
+    </div>
+
+    <form id="codeForm">
+      <!-- label을 input에 for로 연결했다. 전에는 placeholder만 있어서
+           화면 읽기 프로그램이 이 칸이 무엇인지 알려 줄 수 없었다 -->
+      <div class="field">
+        <label for="codeInput">공유 코드</label>
+        <input id="codeInput" name="code" placeholder="예: study-2026" autocomplete="off" required>
+      </div>
+      <button class="btn btn-primary" type="submit">불러오기</button>
+    </form>
+
+    <!-- aria-live: 내용이 바뀌면 화면 읽기 프로그램이 바로 읽어 준다 -->
+    <p id="message" role="status" aria-live="polite"></p>
+
+    <!-- 불러오기 전에는 숨겨 둔다. app.js가 hidden을 끈다 -->
+    <section id="result" hidden aria-label="불러온 기록">
+      <div id="statsCards" class="cards"></div>
+
+      <div class="table-wrap">
+        <table>
+          <caption>최근 7일</caption>
+          <thead>
+            <tr>
+              <th scope="col">날짜</th>
+              <th scope="col">시도</th>
+              <th scope="col">통과</th>
+              <th scope="col">이용 시간</th>
+            </tr>
+          </thead>
+          <tbody id="dailyBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+
+</main>
+
+<footer class="wrap">
+  <div class="footer-row">
+    <p>2507 윤예준 · 정보과학 프로젝트</p>
+    <p><a href="https://github.com/yejunni/probabilistic-site-blocker">GitHub 저장소</a></p>
+  </div>
+</footer>
+
+<script src="guide.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
